@@ -10,6 +10,7 @@
 import argparse
 import asyncio
 import os
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -54,6 +55,21 @@ async def run(target: str, prompt: str, output_dir: str, notebook: str) -> str:
     return path
 
 
+def _relogin() -> bool:
+    """登录态失效时自动重登录（Playwright profile 已保留 Google 登录，全程自动）。"""
+    print('[!] 登录态失效，自动重新登录...')
+    try:
+        r = subprocess.run(
+            [sys.executable, '-m', 'notebooklm', 'login', '--browser', 'msedge'],
+            capture_output=True, text=True, timeout=180)
+        out = (r.stdout or '') + (r.stderr or '')
+        print(out.strip())
+        return r.returncode == 0 and 'saved' in out.lower()
+    except Exception as e:
+        print(f'    重登录失败：{e}')
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description='链接 -> NotebookLM -> 固定流程总结')
     parser.add_argument('target', help='链接（文章/YouTube/B站）或本地文件路径')
@@ -66,8 +82,16 @@ def main():
     with open(args.prompt_file, encoding='utf-8') as f:
         prompt = f.read()
 
-    path = asyncio.run(run(args.target, prompt, args.output, args.notebook))
-    print(f'\n总结已生成：{path}')
+    for attempt in range(2):
+        try:
+            path = asyncio.run(run(args.target, prompt, args.output, args.notebook))
+            print(f'\n总结已生成：{path}')
+            return
+        except (ValueError, FileNotFoundError) as e:
+            msg = str(e)
+            if attempt == 0 and ('Authentication' in msg or 'Storage' in msg) and _relogin():
+                continue
+            raise
 
 
 if __name__ == '__main__':
