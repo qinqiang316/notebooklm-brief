@@ -1,12 +1,4 @@
-# Python
 __pycache__/
-*.py[cod]
-*.egg-info/
-
-# 输出目录（运行时生成，不入库）
+*.pyc
 output/
-
-# 环境与凭据（绝不入库）
-.env
-storage_state.json
-*.log
+.DS_Store
