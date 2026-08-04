@@ -58,8 +58,11 @@ python main.py "https://www.youtube.com/watch?v=..."
 python main.py "https://www.bilibili.com/video/BV..."
 python main.py "D:\docs\paper.pdf"
 
-# 追问上一轮：复用同一笔记本和对话上下文，结果追加到同一 Markdown 文件
-python main.py "https://www.youtube.com/watch?v=..." --follow-up "展开讲一下第一个核心观点"
+# 单轮对话：对同一来源追加一个问题（保持对话上下文，追加到分析文件）
+python main.py "https://www.youtube.com/watch?v=..." --ask "展开讲一下第一个核心观点"
+
+# 交互式对话：连续提问，输入 exit 退出
+python main.py "https://www.youtube.com/watch?v=..." --chat
 
 # 自定义分析模板
 python main.py --prompt-file prompts/analysis.md <链接>
@@ -68,8 +71,10 @@ python main.py --prompt-file prompts/analysis.md <链接>
 python main.py --output ./output --notebook 链接总结 <链接>
 ```
 
-- 默认每个链接一个独立笔记本（`笔记-<标题>`），追问只在对应笔记本的对话里进行，上下文干净
-- 追问（`--follow-up`）不重复添加来源，直接保持上一轮对话追问，结果追加到同一文件
+- 默认每个链接一个独立笔记本（`笔记-<标题>`），对话只在对应笔记本的上下文里进行，互不污染
+- 每次运行后自动生成 **`<标题>.对话记录.md`**：汇总 NotebookLM 里所有轮次的问题和回答（首次模板分析 + 每次 --ask/--chat），全量覆盖更新
+- `--ask` 单轮追问结果同时追加到分析文件；`--chat` 多轮内容都在对话记录里
+- 旧参数 `--follow-up` 是 `--ask` 的别名，兼容
 
 B站视频会先下载音频再转写，耗时约 1-3 分钟，属正常。
 

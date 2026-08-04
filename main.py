@@ -1,13 +1,17 @@
 # -*- coding: utf-8 -*-
 """notebooklm-brief 入口。
 
-用法：
-    python main.py <链接或文件路径>                    # 完整总结（每个链接自动独立笔记本）
-    python main.py <链接或文件路径> --follow-up "追问"  # 追问上一轮（复用笔记本+对话上下文）
+用法（第一种：单来源分析 + 持续对话）：
+    python main.py <链接或文件路径>                    # 完整分析（每个链接自动独立笔记本）
+    python main.py <链接或文件路径> --ask "问题"        # 单轮对话（保持上下文，追加到分析文件）
+    python main.py <链接或文件路径> --chat              # 交互对话：连续提问，exit 退出
+    # 每次运行后自动生成 <标题>.对话记录.md，汇总所有轮次 问题+回答
+
+其他：
     python main.py --prompt-file prompts/analysis.md <链接>   # 自定义分析模板
     python main.py --notebook 指定笔记本名 <链接>      # 手动指定笔记本
 
-流程：识别来源类型 -> NotebookLM 添加来源 -> 按固定模板提问 -> 保存 Markdown 到 output/
+流程：识别来源类型 -> NotebookLM 添加来源 -> 提问 -> 保存分析 + 对话记录到 output/
 """
 import argparse
 import asyncio
@@ -21,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from src.source import classify, bilibili_to_audio
 from src.pipeline import NotebookLM
-from src.output import save_answer
+from src.output import save_answer, save_chat_log
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_PROMPT_FILE = os.path.join(BASE_DIR, 'prompts', 'analysis.md')
@@ -52,7 +56,7 @@ def resolve_notebook_name(target: str, kind: str, src_title: str = None,
 
 
 async def run(target: str, prompt: str, output_dir: str, notebook: str,
-              follow_up: str = None) -> str:
+              ask: str = None, chat: bool = False) -> str:
     kind = classify(target)
     print(f'[1/4] 来源识别：{kind}')
     local_path = None
@@ -73,18 +77,34 @@ async def run(target: str, prompt: str, output_dir: str, notebook: str,
     nb_name = resolve_notebook_name(target, kind, src_title, local_path, notebook)
     print(f'      笔记本：{nb_name}')
 
+    chat_mode = bool(ask) or chat
+    answer = None
+    history: list[tuple[str, str]] = []
+
     async with NotebookLM(notebook_name=nb_name) as nlm:
-        if follow_up:
-            print('[3/4] 追问模式：复用笔记本已有来源...')
+        if chat_mode:
+            print('[3/4] 对话模式：复用笔记本已有来源...')
             sources = await nlm.list_sources()
             if not sources:
-                raise ValueError('笔记本里没有来源：请先不带 --follow-up 跑一次完整总结')
+                raise ValueError('笔记本里没有来源：请先不带 --ask/--chat 跑一次完整分析')
             src_ids = [sid for sid, _ in sources]
             title = sources[0][1] or None
             conv_id = await nlm.get_conversation_id()
-            print('      提问中（保持上一轮对话上下文）...')
-            answer = await nlm.ask(follow_up, source_ids=src_ids,
-                                   conversation_id=conv_id)
+            if chat:
+                print('      交互对话：直接输入问题回车提问，输入 exit 退出')
+                while True:
+                    q = input('      你 > ').strip()
+                    if not q:
+                        continue
+                    if q.lower() in ('exit', 'quit', '退出', 'q'):
+                        break
+                    a = await nlm.ask(q, source_ids=src_ids, conversation_id=conv_id)
+                    print(f'      NotebookLM > {a}\n')
+            else:
+                print('      提问中（保持对话上下文）...')
+                answer = await nlm.ask(ask, source_ids=src_ids,
+                                       conversation_id=conv_id)
+            history = await nlm.get_history()
         else:
             print('[3/4] 添加来源到 NotebookLM...')
             src_id, title = await nlm.add_source(target, kind, local_path)
@@ -92,10 +112,18 @@ async def run(target: str, prompt: str, output_dir: str, notebook: str,
                 title = src_title
             print('      提问中...')
             answer = await nlm.ask(prompt, source_ids=[src_id])
+            history = await nlm.get_history()
 
-    path = save_answer(target, answer, output_dir, title, append=bool(follow_up))
-    print(f'[4/4] 完成：{path}')
-    return path
+    # 保存：首次分析新建文件；--ask 单轮追加到分析文件；--chat 内容都在对话记录里
+    if not chat_mode:
+        path = save_answer(target, answer, output_dir, title, append=False)
+        print(f'[4/4] 分析已保存：{path}')
+    elif ask:
+        path = save_answer(target, answer, output_dir, title, append=True)
+        print(f'[4/4] 追问已追加：{path}')
+    log_path = save_chat_log(target, title, nb_name, history, output_dir)
+    print(f'      对话记录已更新：{log_path}')
+    return log_path
 
 
 def _relogin() -> bool:
@@ -121,17 +149,22 @@ def main():
     parser.add_argument('--output', default=DEFAULT_OUTPUT, help='输出目录（默认 output/）')
     parser.add_argument('--notebook', default=None,
                         help='NotebookLM 笔记本名（默认自动：每个链接独立 笔记-<标题>）')
+    parser.add_argument('--ask', default=None,
+                        help='单轮对话：对同一来源追加一个问题（保持对话上下文）')
     parser.add_argument('--follow-up', default=None,
-                        help='追问模式：对同一来源保持对话上下文继续提问')
+                        help='（--ask 的别名，兼容旧命令）')
+    parser.add_argument('--chat', action='store_true',
+                        help='交互式对话模式：连续提问，输入 exit 退出；结束后自动汇总对话记录')
     args = parser.parse_args()
 
     with open(args.prompt_file, encoding='utf-8') as f:
         prompt = f.read()
 
+    question = args.ask or args.follow_up
     for attempt in range(2):
         try:
             path = asyncio.run(run(args.target, prompt, args.output,
-                                   args.notebook, args.follow_up))
+                                   args.notebook, question, args.chat))
             print(f'\n总结已生成：{path}')
             return
         except (ValueError, FileNotFoundError) as e:

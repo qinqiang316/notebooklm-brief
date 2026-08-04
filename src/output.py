@@ -11,6 +11,46 @@ def slugify(title: str, max_len: int = 40) -> str:
     return t[:max_len] or 'untitled'
 
 
+def save_chat_log(target: str, title: str, nb_name: str,
+                  qa_pairs: list[tuple[str, str]], output_dir: str) -> str:
+    """渲染完整对话记录（所有轮次 问题->回答）为 Markdown，返回路径。
+    文件名：<日期>-<标题>.对话记录.md（每次运行全量覆盖更新）。"""
+    os.makedirs(output_dir, exist_ok=True)
+    date = datetime.now().strftime('%Y-%m-%d')
+    fname = f'{date}-{slugify(title)}.对话记录.md'
+    path = os.path.join(output_dir, fname)
+
+    lines = [
+        f'# 对话记录：{title}',
+        '',
+        f'- 来源：{target}',
+        f'- 笔记本：{nb_name}',
+        f'- 轮次：{len(qa_pairs)}',
+        f'- 更新时间：{datetime.now().strftime("%Y-%m-%d %H:%M")}',
+        '',
+        '---',
+        '',
+    ]
+    for i, (q, a) in enumerate(qa_pairs, 1):
+        lines += [
+            f'## 第 {i} 轮',
+            '',
+            '**提问**：',
+            '',
+            q,
+            '',
+            '**NotebookLM 回答**：',
+            '',
+            a,
+            '',
+            '---',
+            '',
+        ]
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines))
+    return path
+
+
 def save_answer(target: str, answer: str, output_dir: str,
                 title: str = None, append: bool = False) -> str:
     """保存回答为 Markdown 文件，返回文件路径。

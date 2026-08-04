@@ -73,6 +73,16 @@ class NotebookLM:
         nb_id = await self._ensure_notebook()
         return await self._client.chat.get_conversation_id(nb_id)
 
+    async def get_history(self, limit: int = 100) -> list[tuple[str, str]]:
+        """获取笔记本最近对话的完整历史 [(问题, 回答)]，oldest-first。
+        用于汇总所有对话内容生成对话记录。"""
+        nb_id = await self._ensure_notebook()
+        conv_id = await self._client.chat.get_conversation_id(nb_id)
+        if not conv_id:
+            return []
+        return await self._client.chat.get_history(nb_id, limit=limit,
+                                                   conversation_id=conv_id)
+
     async def ask(self, prompt: str, source_ids: list[str] = None,
                   conversation_id: str = None) -> str:
         """按 prompt 提问，返回回答文本。source_ids 指定来源（默认全部）。
