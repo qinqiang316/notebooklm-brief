@@ -52,18 +52,24 @@ python -m notebooklm login --browser msedge
 ## 使用方法
 
 ```bash
-# 基础用法：直接给链接或文件路径
+# 基础用法：直接给链接或文件路径（每个链接自动使用独立笔记本 笔记-<标题>）
 python main.py "https://example.com/article"
 python main.py "https://www.youtube.com/watch?v=..."
 python main.py "https://www.bilibili.com/video/BV..."
 python main.py "D:\docs\paper.pdf"
 
+# 追问上一轮：复用同一笔记本和对话上下文，结果追加到同一 Markdown 文件
+python main.py "https://www.youtube.com/watch?v=..." --follow-up "展开讲一下第一个核心观点"
+
 # 自定义分析模板
 python main.py --prompt-file prompts/analysis.md <链接>
 
-# 指定输出目录 / 目标笔记本
+# 指定输出目录 / 手动指定笔记本（覆盖自动命名）
 python main.py --output ./output --notebook 链接总结 <链接>
 ```
+
+- 默认每个链接一个独立笔记本（`笔记-<标题>`），追问只在对应笔记本的对话里进行，上下文干净
+- 追问（`--follow-up`）不重复添加来源，直接保持上一轮对话追问，结果追加到同一文件
 
 B站视频会先下载音频再转写，耗时约 1-3 分钟，属正常。
 

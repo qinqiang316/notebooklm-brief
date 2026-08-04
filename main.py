@@ -2,16 +2,20 @@
 """notebooklm-brief 入口。
 
 用法：
-    python main.py <链接或文件路径>
+    python main.py <链接或文件路径>                    # 完整总结（每个链接自动独立笔记本）
+    python main.py <链接或文件路径> --follow-up "追问"  # 追问上一轮（复用笔记本+对话上下文）
     python main.py --prompt-file prompts/analysis.md <链接>   # 自定义分析模板
+    python main.py --notebook 指定笔记本名 <链接>      # 手动指定笔记本
 
 流程：识别来源类型 -> NotebookLM 添加来源 -> 按固定模板提问 -> 保存 Markdown 到 output/
 """
 import argparse
 import asyncio
 import os
+import re
 import subprocess
 import sys
+from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -24,7 +28,31 @@ DEFAULT_PROMPT_FILE = os.path.join(BASE_DIR, 'prompts', 'analysis.md')
 DEFAULT_OUTPUT = os.path.join(BASE_DIR, 'output')
 
 
-async def run(target: str, prompt: str, output_dir: str, notebook: str) -> str:
+def resolve_notebook_name(target: str, kind: str, src_title: str = None,
+                          local_path: str = None, explicit: str = None) -> str:
+    """笔记本名：显式指定优先；否则按来源自动生成 笔记-<标题>（每链接独立笔记本）。"""
+    if explicit:
+        return explicit
+    base = None
+    if src_title:
+        base = src_title
+    elif local_path:
+        base = os.path.splitext(os.path.basename(local_path))[0]
+    elif kind in ('url', 'youtube'):
+        p = urlparse(target)
+        seg = p.path.rstrip('/').split('/')[-1] if p.path else ''
+        if seg and seg not in ('watch', 'index', 'home'):
+            base = seg
+        else:
+            base = p.netloc
+    else:
+        base = target
+    slug = re.sub(r'[\\/:*?"<>|\s]+', '-', base).strip('-')
+    return f'笔记-{slug[:40] or "untitled"}'
+
+
+async def run(target: str, prompt: str, output_dir: str, notebook: str,
+              follow_up: str = None) -> str:
     kind = classify(target)
     print(f'[1/4] 来源识别：{kind}')
     local_path = None
@@ -42,15 +70,30 @@ async def run(target: str, prompt: str, output_dir: str, notebook: str) -> str:
     else:
         print('[2/4] 直接使用链接/文件')
 
-    async with NotebookLM(notebook_name=notebook) as nlm:
-        print('[3/4] 添加来源到 NotebookLM...')
-        src_id, title = await nlm.add_source(target, kind, local_path)
-        if src_title:  # B站真实视频标题优先于文件名
-            title = src_title
-        print('      提问中...')
-        answer = await nlm.ask(prompt, source_ids=[src_id])
+    nb_name = resolve_notebook_name(target, kind, src_title, local_path, notebook)
+    print(f'      笔记本：{nb_name}')
 
-    path = save_answer(target, answer, output_dir, title)
+    async with NotebookLM(notebook_name=nb_name) as nlm:
+        if follow_up:
+            print('[3/4] 追问模式：复用笔记本已有来源...')
+            sources = await nlm.list_sources()
+            if not sources:
+                raise ValueError('笔记本里没有来源：请先不带 --follow-up 跑一次完整总结')
+            src_ids = [sid for sid, _ in sources]
+            title = sources[0][1] or None
+            conv_id = await nlm.get_conversation_id()
+            print('      提问中（保持上一轮对话上下文）...')
+            answer = await nlm.ask(follow_up, source_ids=src_ids,
+                                   conversation_id=conv_id)
+        else:
+            print('[3/4] 添加来源到 NotebookLM...')
+            src_id, title = await nlm.add_source(target, kind, local_path)
+            if src_title:  # B站真实视频标题优先于文件名
+                title = src_title
+            print('      提问中...')
+            answer = await nlm.ask(prompt, source_ids=[src_id])
+
+    path = save_answer(target, answer, output_dir, title, append=bool(follow_up))
     print(f'[4/4] 完成：{path}')
     return path
 
@@ -76,7 +119,10 @@ def main():
     parser.add_argument('--prompt-file', default=DEFAULT_PROMPT_FILE,
                         help='分析模板文件（默认 prompts/analysis.md）')
     parser.add_argument('--output', default=DEFAULT_OUTPUT, help='输出目录（默认 output/）')
-    parser.add_argument('--notebook', default='链接总结', help='NotebookLM 笔记本名（默认 链接总结）')
+    parser.add_argument('--notebook', default=None,
+                        help='NotebookLM 笔记本名（默认自动：每个链接独立 笔记-<标题>）')
+    parser.add_argument('--follow-up', default=None,
+                        help='追问模式：对同一来源保持对话上下文继续提问')
     args = parser.parse_args()
 
     with open(args.prompt_file, encoding='utf-8') as f:
@@ -84,7 +130,8 @@ def main():
 
     for attempt in range(2):
         try:
-            path = asyncio.run(run(args.target, prompt, args.output, args.notebook))
+            path = asyncio.run(run(args.target, prompt, args.output,
+                                   args.notebook, args.follow_up))
             print(f'\n总结已生成：{path}')
             return
         except (ValueError, FileNotFoundError) as e:

@@ -62,8 +62,23 @@ class NotebookLM:
             pass
         return src.id, title
 
-    async def ask(self, prompt: str, source_ids: list[str] = None) -> str:
-        """按 prompt 提问，返回回答文本。source_ids 指定来源（默认全部）。"""
+    async def list_sources(self) -> list[tuple[str, str]]:
+        """返回笔记本内所有来源 (source_id, title)。追问时复用，不重复添加。"""
         nb_id = await self._ensure_notebook()
-        result = await self._client.chat.ask(nb_id, prompt, source_ids=source_ids)
+        sources = await self._client.sources.list(nb_id)
+        return [(s.id, getattr(s, 'title', '') or '') for s in sources]
+
+    async def get_conversation_id(self) -> str | None:
+        """获取当前对话 ID（追问时传入保持上下文）。"""
+        nb_id = await self._ensure_notebook()
+        return await self._client.chat.get_conversation_id(nb_id)
+
+    async def ask(self, prompt: str, source_ids: list[str] = None,
+                  conversation_id: str = None) -> str:
+        """按 prompt 提问，返回回答文本。source_ids 指定来源（默认全部）。
+        conversation_id 传上次对话 ID 即为追问（保持上下文）。"""
+        nb_id = await self._ensure_notebook()
+        result = await self._client.chat.ask(nb_id, prompt,
+                                             source_ids=source_ids,
+                                             conversation_id=conversation_id)
         return getattr(result, 'answer', str(result))
