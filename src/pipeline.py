@@ -83,6 +83,67 @@ class NotebookLM:
         return await self._client.chat.get_history(nb_id, limit=limit,
                                                    conversation_id=conv_id)
 
+    async def generate_artifact(self, kind: str, lang: str = 'zh',
+                                source_ids: list[str] = None):
+        """生成 NotebookLM 原生内容（报告/播客/导图等），等待完成。
+        kind: report|podcast|mindmap|quiz|flashcards|studyguide|infographic|slidedeck
+        返回 (kind, artifact_id)。"""
+        nb_id = await self._ensure_notebook()
+        arts = self._client.artifacts
+        kind = kind.lower()
+        if kind == 'report':
+            st = await arts.generate_report(nb_id, source_ids=source_ids, language=lang)
+        elif kind == 'podcast':
+            st = await arts.generate_audio(nb_id, source_ids=source_ids, language=lang)
+        elif kind == 'mindmap':
+            result = await arts.generate_mind_map(nb_id, source_ids=source_ids,
+                                                  language=lang)
+            return kind, getattr(result, 'note_id', None)
+        elif kind == 'quiz':
+            st = await arts.generate_quiz(nb_id, source_ids=source_ids)
+        elif kind == 'flashcards':
+            st = await arts.generate_flashcards(nb_id, source_ids=source_ids)
+        elif kind == 'studyguide':
+            st = await arts.generate_study_guide(nb_id, source_ids=source_ids,
+                                                 language=lang)
+        elif kind == 'infographic':
+            st = await arts.generate_infographic(nb_id, source_ids=source_ids,
+                                                 language=lang)
+        elif kind == 'slidedeck':
+            st = await arts.generate_slide_deck(nb_id, source_ids=source_ids,
+                                                language=lang)
+        else:
+            raise ValueError(
+                f'未知类型：{kind}，可选 report/podcast/mindmap/quiz/flashcards/'
+                'studyguide/infographic/slidedeck')
+        st = await arts.wait_for_completion(nb_id, st.task_id, timeout=600)
+        if st.is_failed or st.is_removed:
+            raise RuntimeError(f'{kind} 生成失败：{st.error or st.status}')
+        return kind, st.task_id
+
+    async def download_artifact(self, kind: str, artifact_id: str,
+                                output_path: str) -> str:
+        """下载已生成的 artifact 到本地，返回实际路径。"""
+        nb_id = await self._ensure_notebook()
+        arts = self._client.artifacts
+        if kind == 'report':
+            return await arts.download_report(nb_id, output_path, artifact_id)
+        if kind == 'podcast':
+            return await arts.download_audio(nb_id, output_path, artifact_id)
+        if kind == 'mindmap':
+            return await arts.download_mind_map(nb_id, output_path, artifact_id)
+        if kind == 'quiz':
+            return await arts.download_quiz(nb_id, output_path, artifact_id)
+        if kind == 'flashcards':
+            return await arts.download_flashcards(nb_id, output_path, artifact_id)
+        if kind == 'studyguide':
+            return await arts.download_report(nb_id, output_path, artifact_id)
+        if kind == 'infographic':
+            return await arts.download_infographic(nb_id, output_path, artifact_id)
+        if kind == 'slidedeck':
+            return await arts.download_slide_deck(nb_id, output_path, artifact_id)
+        raise ValueError(f'未知类型：{kind}')
+
     async def ask(self, prompt: str, source_ids: list[str] = None,
                   conversation_id: str = None) -> str:
         """按 prompt 提问，返回回答文本。source_ids 指定来源（默认全部）。

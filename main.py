@@ -5,11 +5,14 @@
     python main.py <链接或文件路径>                    # 完整分析（每个链接自动独立笔记本）
     python main.py <链接或文件路径> --ask "问题"        # 单轮对话（保持上下文，追加到分析文件）
     python main.py <链接或文件路径> --chat              # 交互对话：连续提问，exit 退出
-    # 每次运行后自动生成 <标题>.对话记录.md，汇总所有轮次 问题+回答
+    python main.py <链接或文件路径> --learn             # 一次生成 导图+报告+学习指南
+    python main.py <链接或文件路径> --artifact report   # 单个生成：mindmap/report/studyguide
+    #   每次运行后自动生成 <标题>.对话记录.md，汇总所有轮次 问题+回答
 
 其他：
     python main.py --prompt-file prompts/analysis.md <链接>   # 自定义分析模板
     python main.py --notebook 指定笔记本名 <链接>      # 手动指定笔记本
+    python main.py --lang en ...                        # artifact 生成语言
 
 流程：识别来源类型 -> NotebookLM 添加来源 -> 提问 -> 保存分析 + 对话记录到 output/
 """
@@ -25,11 +28,21 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from src.source import classify, bilibili_to_audio
 from src.pipeline import NotebookLM
-from src.output import save_answer, save_chat_log
+from src.output import save_answer, save_chat_log, slugify
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_PROMPT_FILE = os.path.join(BASE_DIR, 'prompts', 'analysis.md')
 DEFAULT_OUTPUT = os.path.join(BASE_DIR, 'output')
+
+# artifact 类型 -> 下载文件扩展名
+ARTIFACT_EXT = {
+    'report': 'md', 'studyguide': 'md',
+    'podcast': 'mp3',
+    'mindmap': 'json',
+    'quiz': 'json', 'flashcards': 'json',
+    'infographic': 'png',
+    'slidedeck': 'pdf',
+}
 
 
 def resolve_notebook_name(target: str, kind: str, src_title: str = None,
@@ -56,7 +69,8 @@ def resolve_notebook_name(target: str, kind: str, src_title: str = None,
 
 
 async def run(target: str, prompt: str, output_dir: str, notebook: str,
-              ask: str = None, chat: bool = False) -> str:
+              ask: str = None, chat: bool = False,
+              artifacts: list[str] = None, lang: str = 'zh') -> str:
     kind = classify(target)
     print(f'[1/4] 来源识别：{kind}')
     local_path = None
@@ -82,6 +96,32 @@ async def run(target: str, prompt: str, output_dir: str, notebook: str,
     history: list[tuple[str, str]] = []
 
     async with NotebookLM(notebook_name=nb_name) as nlm:
+        if artifacts:
+            print(f'[3/4] 生成 NotebookLM 内容：{", ".join(artifacts)}...')
+            title = None
+            sources = await nlm.list_sources()
+            if not sources:
+                print('      笔记本无来源，先添加...')
+                src_id, title = await nlm.add_source(target, kind, local_path)
+                if src_title:  # B站真实视频标题优先于文件名
+                    title = src_title
+                sources = await nlm.list_sources()
+            src_ids = [sid for sid, _ in sources]
+            if not title:
+                title = sources[0][1] or 'untitled'
+            adir = os.path.join(output_dir, 'artifacts')
+            os.makedirs(adir, exist_ok=True)
+            paths = []
+            for a in artifacts:
+                print(f'      生成 {a}...')
+                akind, aid = await nlm.generate_artifact(a, lang, src_ids)
+                fname = f'{slugify(title)}-{akind}.{ARTIFACT_EXT.get(akind, "bin")}'
+                apath = await nlm.download_artifact(akind, aid,
+                                                    os.path.join(adir, fname))
+                print(f'      ✓ {apath}')
+                paths.append(apath)
+            print(f'[4/4] 完成：{len(paths)} 个文件')
+            return paths
         if chat_mode:
             print('[3/4] 对话模式：复用笔记本已有来源...')
             sources = await nlm.list_sources()
@@ -155,16 +195,31 @@ def main():
                         help='（--ask 的别名，兼容旧命令）')
     parser.add_argument('--chat', action='store_true',
                         help='交互式对话模式：连续提问，输入 exit 退出；结束后自动汇总对话记录')
+    parser.add_argument('--artifact',
+                        choices=['mindmap', 'report', 'studyguide'],
+                        help='生成 NotebookLM 原生内容：mindmap 导图 / report 报告 / '
+                             'studyguide 学习指南')
+    parser.add_argument('--learn', action='store_true',
+                        help='一次生成 导图+报告+学习指南 三个学习产物')
+    parser.add_argument('--lang', default='zh',
+                        help='artifact 生成语言（默认 zh 中文）')
     args = parser.parse_args()
 
     with open(args.prompt_file, encoding='utf-8') as f:
         prompt = f.read()
 
     question = args.ask or args.follow_up
+    if args.learn:
+        artifacts = ['mindmap', 'report', 'studyguide']
+    elif args.artifact:
+        artifacts = [args.artifact]
+    else:
+        artifacts = None
     for attempt in range(2):
         try:
             path = asyncio.run(run(args.target, prompt, args.output,
-                                   args.notebook, question, args.chat))
+                                   args.notebook, question, args.chat,
+                                   artifacts, args.lang))
             print(f'\n总结已生成：{path}')
             return
         except (ValueError, FileNotFoundError) as e:
