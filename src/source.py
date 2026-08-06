@@ -19,6 +19,19 @@ def classify(target: str) -> str:
     return 'text'
 
 
+def youtube_title(url: str) -> str | None:
+    """YouTube 链接 -> 视频标题（yt-dlp，用于笔记本命名）。失败返回 None。"""
+    try:
+        r = subprocess.run(
+            ['python', '-m', 'yt_dlp', '--get-title', '--no-playlist', url],
+            capture_output=True, text=True, timeout=60)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+
 def bilibili_to_audio(url: str, workdir: str = None) -> tuple[str, str]:
     """B站视频链接 -> 下载音频文件（NotebookLM 不认 bilibili 链接，需转音频上传）。
     依赖 yt-dlp。返回 (本地音频文件路径, 视频标题)。"""

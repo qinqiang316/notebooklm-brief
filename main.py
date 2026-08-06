@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.source import classify, bilibili_to_audio
+from src.source import classify, bilibili_to_audio, youtube_title
 from src.pipeline import NotebookLM
 from src.output import save_answer, save_chat_log, slugify
 
@@ -85,6 +85,13 @@ async def run(target: str, prompt: str, output_dir: str, notebook: str,
     elif kind == 'file':
         print(f'[2/4] 本地文件：{target}')
         local_path = target
+    elif kind == 'youtube':
+        print('[2/4] YouTube：预取标题用于笔记本命名...')
+        src_title = youtube_title(target)
+        if src_title:
+            print(f'      标题：{src_title}')
+        else:
+            print('      标题获取失败，回退 URL 命名')
     else:
         print('[2/4] 直接使用链接/文件')
 
