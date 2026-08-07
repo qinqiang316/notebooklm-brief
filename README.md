@@ -43,12 +43,13 @@
 所有机器相关配置集中在项目根 **`config.yaml`**（归档目录 / 输出目录 / 代理 / 语言 / 账号邮箱），代码不硬编码路径。
 
 ```yaml
-output_dir: .../output          # 输出目录
-archive_dir: D:\QQ的收藏夹\RAW  # 归档目录（合并笔记复制到此处，留空=不归档）
-proxy: http://127.0.0.1:10808   # 访问 Google 的代理
-language: zh_Hans               # NotebookLM 生成语言
-yt_match: true                  # B站是否先匹配 YouTube 原片
-account_email: ...              # Google 账号（提示用）
+output_dir: .../output                  # 输出目录
+archive_dir: D:\QQ的收藏夹\RAW          # 归档目录（本地 Obsidian 库，留空=不归档）
+archive_template: D:\QQ的收藏夹\moban\模版1.md  # 归档 frontmatter 模板（title/source/created 自动填充，留空=直接复制合并笔记）
+proxy: http://127.0.0.1:10808           # 访问 Google 的代理
+language: zh_Hans                       # NotebookLM 生成语言
+yt_match: true                          # B站是否先匹配 YouTube 原片
+account_email: ...                      # Google 账号（提示用）
 ```
 
 ### 首次使用 / 迁移到新机器
@@ -68,7 +69,7 @@ python main.py --doctor
 ```
 
 - 迁移：复制项目目录 + `config.example.yaml` 为 `config.yaml` 改路径即可；NotebookLM 登录态在 `~/.notebooklm/`（新机器需重新登录）
-- `config.yaml` 已 gitignore（含本机路径）；归档目录未配置时跳过归档
+- `config.yaml` 已 gitignore（含本机路径）；归档目录未配置时跳过归档；归档套用 `archive_template` 指定的 Obsidian frontmatter 模板（无模板时直接复制合并笔记）
 
 ## 环境要求
 

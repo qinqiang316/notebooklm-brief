@@ -17,6 +17,7 @@ CONFIG_PATH = os.path.join(BASE_DIR, 'config.yaml')
 DEFAULTS = {
     'output_dir': os.path.join(BASE_DIR, 'output'),
     'archive_dir': '',            # 空 = 不归档，需在 --setup 或 config.yaml 配置
+    'archive_template': '',       # 归档模板（Obsidian frontmatter 模板 .md），空 = 直接复制
     'proxy': 'http://127.0.0.1:10808',   # v2rayN 本地代理
     'language': 'zh_Hans',        # NotebookLM 生成语言
     'yt_proxy': '',               # 访问 YouTube 的代理（默认同 proxy）
@@ -56,8 +57,13 @@ def get(key: str, default=None):
 
 
 def get_archive_dir() -> str:
-    """归档目录（RAW）。未配置返回空串（调用方决定是否归档）。"""
+    """归档目录（Obsidian 库目录）。未配置返回空串（调用方决定是否归档）。"""
     return str(get('archive_dir', '') or '')
+
+
+def get_archive_template() -> str:
+    """归档模板路径（frontmatter 模板 .md）。未配置返回空串（直接复制）。"""
+    return str(get('archive_template', '') or '')
 
 
 def get_output_dir() -> str:

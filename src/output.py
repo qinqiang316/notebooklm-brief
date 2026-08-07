@@ -182,11 +182,59 @@ def build_note_file(nb_dir: str, title: str, target: str,
     return path
 
 
-# ---------- 归档到 RAW（查重：原始链接优先，其次标题；相同则覆盖） ----------
+# ---------- 归档到 Obsidian 库（查重：原始链接优先，其次标题；相同则覆盖） ----------
+
+def render_archive_note(template_path: str, title: str, source: str,
+                        meta: dict | None = None) -> str:
+    """用 Obsidian 模板渲染归档笔记的 frontmatter + 模板正文部分。
+    - 模板为 Markdown 文件，frontmatter（--- 之间的 YAML）中空值字段按映射填充：
+      title=笔记标题, source=原始链接或来源, author/published/description/tags=meta 提供值,
+      created=今天日期
+    - 模板中已有值的字段、非 frontmatter 部分原样保留；模板无 frontmatter 时原样返回
+    - 返回渲染后的模板文本，归档正文由调用方追加。"""
+    with open(template_path, encoding='utf-8') as f:
+        text = f.read()
+
+    m = re.match(r'^---\s*\n(.*?)\n---\s*\n?(.*)$', text, re.S)
+    if not m:
+        return text  # 无 frontmatter，原样返回
+
+    fm_body, rest = m.group(1), m.group(2)
+    meta = meta or {}
+    values = {
+        'title': title,
+        'source': source or meta.get('original_url') or '',
+        'author': meta.get('author') or '',
+        'published': meta.get('published') or '',
+        'created': datetime.now().strftime('%Y-%m-%d'),
+        'description': meta.get('description') or '',
+        'tags': meta.get('tags') or '',
+    }
+    lines = []
+    for line in fm_body.split('\n'):
+        km = re.match(r'^(\s*)([\w.-]+)\s*:\s*(.*)$', line)
+        if km and not line.lstrip().startswith('#'):
+            indent, key, val = km.group(1), km.group(2), km.group(3)
+            if not val.strip() and key in values and values[key]:
+                # tags 列表 -> YAML 行内列表；其余值剥掉换行（frontmatter 单行）
+                if key == 'tags' and isinstance(values[key], (list, tuple)):
+                    rendered = ', '.join(str(t) for t in values[key])
+                    lines.append(f'{indent}{key}: [{rendered}]')
+                else:
+                    rendered = str(values[key]).replace('\n', ' ').strip()
+                    lines.append(f'{indent}{key}: {rendered}')
+                continue
+        lines.append(line)
+
+    return '---\n' + '\n'.join(lines) + '\n---\n' + rest
+
 
 def archive_to_raw(nb_dir: str, archive_dir: str,
-                   title: str, meta: dict | None = None) -> str | None:
-    """归档笔记文件到 archive_dir。
+                   title: str, meta: dict | None = None,
+                   target: str = None,
+                   template_path: str = None) -> str | None:
+    """归档笔记文件到 archive_dir（Obsidian 库目录）。
+    - template_path 存在时：用模板渲染 frontmatter + 合并笔记正文；否则直接复制
     - 查重：优先原始链接（meta.original_url），其次标题（去 slug 前缀）
     - 相同则用最新覆盖；不同则新增
     - 返回归档路径；无笔记文件返回 None。"""
@@ -195,7 +243,7 @@ def archive_to_raw(nb_dir: str, archive_dir: str,
         return None
     os.makedirs(archive_dir, exist_ok=True)
 
-    # 原始链接查重：扫描已有归档的 metadata
+    # 原始链接查重：扫描已有归档的 metadata（兼容旧格式 `原始链接：` 与新格式 frontmatter `source:`）
     src_url = (meta or {}).get('original_url') or ''
     target_name = None
     if src_url:
@@ -207,18 +255,21 @@ def archive_to_raw(nb_dir: str, archive_dir: str,
                 head = open(p, encoding='utf-8').read(2000)
             except Exception:
                 continue
-            if f'原始链接：{src_url}' in head:
+            if f'原始链接：{src_url}' in head or f'source: {src_url}' in head:
                 target_name = f
                 break
-    # 标题查重（无链接命中时）
+    # 标题查重（无链接命中时；兼容旧格式 `# 笔记：` 与新格式 frontmatter `title:`）
     if target_name is None:
         slug_title = slugify(title, max_len=80)
         for f in os.listdir(archive_dir):
             if not f.endswith('.md'):
                 continue
             stem = os.path.splitext(f)[0]
-            if stem == slug_title or f'# 笔记：{title}' in open(
-                    os.path.join(archive_dir, f), encoding='utf-8').read(2000):
+            try:
+                head = open(os.path.join(archive_dir, f), encoding='utf-8').read(2000)
+            except Exception:
+                continue
+            if stem == slug_title or f'# 笔记：{title}' in head or f'title: {title}' in head:
                 target_name = f
                 break
     # 归档文件名：<标题>.笔记.md（与源文件一致）
@@ -229,6 +280,15 @@ def archive_to_raw(nb_dir: str, archive_dir: str,
             os.remove(os.path.join(archive_dir, target_name))
         except OSError:
             pass
-    import shutil
-    shutil.copy2(note_file, dest)
+    note_content = open(note_file, encoding='utf-8').read()
+    if template_path and os.path.isfile(template_path):
+        # 模板渲染：frontmatter + 模板正文（若有）+ 合并笔记正文
+        rendered = render_archive_note(template_path, title, target or src_url, meta)
+        with open(dest, 'w', encoding='utf-8') as f:
+            f.write(rendered.rstrip('\n'))
+            f.write('\n\n')
+            f.write(note_content)
+    else:
+        import shutil
+        shutil.copy2(note_file, dest)
     return dest

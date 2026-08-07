@@ -7,8 +7,12 @@
 # 输出目录：分析/导图/学习指南/合并笔记存放处（每个笔记本一个子文件夹）
 output_dir: E:\AI project\06-工具项目\notebooklm-brief\output
 
-# 归档目录：每次分析后合并笔记复制到此（RAW 收藏夹）。留空 = 不归档
+# 归档目录：每次分析后合并笔记归档到此（本地 Obsidian 库目录，如 D:\QQ的收藏夹\RAW）。留空 = 不归档
 archive_dir: D:\QQ的收藏夹\RAW
+
+# 归档模板：Obsidian frontmatter 模板 .md 路径（如 D:\QQ的收藏夹\moban\模版1.md）。
+# 归档时用该模板渲染 frontmatter（title/source/created 自动填充），正文为合并笔记全文。留空 = 直接复制合并笔记
+# archive_template:
 
 # 访问 Google / NotebookLM 的本地代理（v2rayN 等）。留空 = 直连（可能超时）
 proxy: http://127.0.0.1:10808

@@ -55,11 +55,14 @@ def _check_dirs() -> dict[str, bool]:
     """检查关键目录。返回 {说明: 是否存在}。"""
     output_dir = cfg.get_output_dir()
     archive_dir = cfg.get_archive_dir()
+    template_path = cfg.get_archive_template()
     result = {
         f'output 目录（{output_dir}）': os.path.isdir(output_dir),
     }
     if archive_dir:
         result[f'归档目录（{archive_dir}）'] = os.path.isdir(archive_dir)
+    if template_path:
+        result[f'归档模板（{template_path}）'] = os.path.isfile(template_path)
     return result
 
 
@@ -102,6 +105,8 @@ def run_doctor() -> int:
     print(f'  · 输出目录：{cfg.get_output_dir()}')
     archive = cfg.get_archive_dir()
     print(f'  · 归档目录：{archive or "（未配置）"}')
+    tpl = cfg.get_archive_template()
+    print(f'  · 归档模板：{tpl or "（未配置，直接复制合并笔记）"}')
     print(f'  · 语言：{cfg.get_language()}')
     print(f'  · 代理：{cfg.get_proxy()}')
 
@@ -208,8 +213,11 @@ def run_setup() -> int:
     # 3. 配置（归档目录等）
     print('\n[3/4] 配置文件 config.yaml')
     archive_default = cfg.get_archive_dir()
-    archive = _ask('归档目录（合并笔记复制到此处，RAW 收藏夹；留空跳过归档）',
+    archive = _ask('归档目录（合并笔记归档到本地 Obsidian 库，如 RAW；留空跳过归档）',
                    archive_default or '')
+    tpl_default = cfg.get_archive_template()
+    tpl = _ask('归档模板 .md 路径（frontmatter 模板，留空 = 直接复制合并笔记）',
+               tpl_default or '')
     output_default = cfg.get_output_dir()
     output = _ask('输出目录', output_default)
     proxy_default = cfg.get_proxy()
@@ -218,6 +226,7 @@ def run_setup() -> int:
     email = _ask('Google 账号邮箱（提示用，可留空）', email_default)
     cfg.save({
         'archive_dir': archive,
+        'archive_template': tpl,
         'output_dir': output,
         'proxy': proxy,
         'account_email': email,

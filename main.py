@@ -81,7 +81,8 @@ async def run(target: str, prompt: str, output_dir: str, notebook: str,
               artifacts: list[str] = None, lang: str = 'zh',
               artifact_only: bool = False,
               skip_yt_match: bool = False,
-              archive_dir: str = None) -> str:
+              archive_dir: str = None,
+              archive_template: str = None) -> str:
     kind = classify(target)
     print(f'[1/4] 来源识别：{kind}')
     local_path = None
@@ -220,9 +221,10 @@ async def run(target: str, prompt: str, output_dir: str, notebook: str,
         note_path = build_note_file(nb_dir, title, target, fulltext,
                                     answer, history, meta)
         print(f'      合并笔记已更新：{note_path}')
-        # 归档到 RAW
+        # 归档到 Obsidian 库（RAW 目录，套用模板 frontmatter）
         if archive_dir:
-            archived = archive_to_raw(nb_dir, archive_dir, title, meta)
+            archived = archive_to_raw(nb_dir, archive_dir, title, meta,
+                                      target, archive_template)
             if archived:
                 print(f'      已归档：{archived}')
     return log_path
@@ -407,11 +409,12 @@ def main():
                 archive_dir = args.archive
             else:
                 archive_dir = cfg.get_archive_dir() or None
+            archive_template = cfg.get_archive_template() or None
             skip_yt = args.no_yt_match or not cfg.get_yt_match()
             path = asyncio.run(run(args.target, prompt, args.output,
                                    args.notebook, question, args.chat,
                                    artifacts, args.lang, artifact_only,
-                                   skip_yt, archive_dir))
+                                   skip_yt, archive_dir, archive_template))
             print(f'\n总结已生成：{path}')
             return
         except (ValueError, FileNotFoundError) as e:
