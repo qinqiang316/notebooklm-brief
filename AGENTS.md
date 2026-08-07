@@ -40,6 +40,9 @@ VPY="/c/Users/lenovo/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe"
 # 快速模式：只出分析+对话记录，跳过默认学习产物
 "$VPY" main.py "<链接>" --no-learn
 
+# 归档：默认每次分析后自动归档合并笔记到 D:\QQ的收藏夹\RAW（--archive 指定目录，--no-archive 跳过）
+"$VPY" main.py "<链接>" --no-archive
+
 # 跳过 B站->YouTube 原片匹配，直接下载音频（默认自动尝试匹配）
 "$VPY" main.py "<B站链接>" --no-yt-match
 
@@ -82,12 +85,19 @@ VPY="/c/Users/lenovo/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe"
 |---|---|
 | `output/<笔记本名>/<标题>.md` | 分析文件（首次五段式 + --ask 追问段落追加） |
 | `output/<笔记本名>/<标题>.对话记录.md` | 全部轮次 Q&A 归档（每次运行全量覆盖更新） |
+| `output/<笔记本名>/<标题>.笔记.md` | **合并笔记**：原文 + 分析 + 导图 + 学习指南 + 对话记录（每次运行全量重建） |
 | `output/<笔记本名>/<标题>-studyguide.md` | 学习指南（默认分析自动生成） |
 | `output/<笔记本名>/<标题>-mindmap.json` | 内容大纲导图（JSON 树，默认分析自动生成） |
 | `output/<笔记本名>/<标题>-mindmap.md` | 导图 Markdown 版（JSON 自动转换，易读大纲） |
 | `output/<笔记本名>/<标题>-report.md` | 简报文档（仅 --learn / --artifact report 生成） |
 
 文件名固定不带日期前缀（跨天追问正确追加到同一文件）；日期信息在文件头 metadata 里。
+
+## 合并笔记与归档
+
+- **合并笔记**（`<标题>.笔记.md`）：把 ①原文（NotebookLM get_fulltext 提取文章全文/视频转写，markdown 格式需 markdownify 包，缺失自动回退 text）②五段式分析 ③内容大纲导图(md) ④学习指南 ⑤对话记录 合并为一个文件；每次运行（分析/追问/chat）全量重建，实时更新
+- **归档**：默认每次分析后自动复制合并笔记到 `D:\QQ的收藏夹\RAW`（`--archive` 指定目录，`--no-archive` 跳过）
+- **查重规则**：优先原始链接（笔记头 `原始链接：` metadata，B站链接保留原始 bilibili 地址），其次标题；相同则用最新覆盖，不同则新增
 
 ## 笔记本同步（--sync-notebooks）
 

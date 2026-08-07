@@ -31,10 +31,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from src.source import (classify, bilibili_to_audio, bilibili_meta,
                         youtube_match, youtube_title)
 from src.pipeline import NotebookLM
-from src.output import save_answer, save_chat_log, slugify, notebook_dir
+from src.output import (save_answer, save_chat_log, slugify, notebook_dir,
+                        build_note_file, archive_to_raw)
 
 # 默认学习产物：每次完整分析自动生成 内容大纲导图 + 学习指南
 DEFAULT_LEARN = ['mindmap', 'studyguide']
+
+# 默认归档目录（RAW 收藏夹）
+DEFAULT_ARCHIVE = r'D:\QQ的收藏夹\RAW'
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_PROMPT_FILE = os.path.join(BASE_DIR, 'prompts', 'analysis.md')
@@ -78,11 +82,13 @@ async def run(target: str, prompt: str, output_dir: str, notebook: str,
               ask: str = None, chat: bool = False,
               artifacts: list[str] = None, lang: str = 'zh',
               artifact_only: bool = False,
-              skip_yt_match: bool = False) -> str:
+              skip_yt_match: bool = False,
+              archive_dir: str = None) -> str:
     kind = classify(target)
     print(f'[1/4] 来源识别：{kind}')
     local_path = None
     src_title = None
+    original_url = target if target.startswith('http') else None
     if kind == 'bilibili':
         # 优化：先尝试 YouTube 原片（NotebookLM 服务端直接转写，省下载音频）
         if not skip_yt_match:
@@ -130,6 +136,7 @@ async def run(target: str, prompt: str, output_dir: str, notebook: str,
     chat_mode = bool(ask) or chat
     answer = None
     history: list[tuple[str, str]] = []
+    last_src_id = None
 
     # 默认学习产物：完整分析自动生成 导图+学习指南；追问/对话/纯产物模式不默认生成
     if artifacts is None and not chat_mode and not artifact_only:
@@ -142,7 +149,10 @@ async def run(target: str, prompt: str, output_dir: str, notebook: str,
             if not sources:
                 raise ValueError('笔记本里没有来源：请先不带 --ask/--chat 跑一次完整分析')
             src_ids = [sid for sid, _ in sources]
-            title = sources[0][1] or None
+            if src_ids:
+                last_src_id = src_ids[0]
+            # 真实标题优先（B站/YouTube 预取标题 > NotebookLM 源名）
+            title = src_title or sources[0][1] or None
             conv_id = await nlm.get_conversation_id()
             if chat:
                 print('      交互对话：直接输入问题回车提问，输入 exit 退出')
@@ -181,6 +191,7 @@ async def run(target: str, prompt: str, output_dir: str, notebook: str,
             src_id, title = await nlm.add_source(target, kind, local_path)
             if src_title:  # B站真实视频标题优先于文件名
                 title = src_title
+            last_src_id = src_id
             print('      提问中...')
             answer = await nlm.ask(prompt, source_ids=[src_id])
             history = await nlm.get_history()
@@ -200,6 +211,22 @@ async def run(target: str, prompt: str, output_dir: str, notebook: str,
         print(f'[4/4] 追问已追加：{path}')
     log_path = save_chat_log(target, title, nb_name, history, nb_dir)
     print(f'      对话记录已更新：{log_path}')
+
+    # 合并笔记：原文 + 分析 + 导图 + 学习指南 + 对话记录（每次运行全量重建，实时更新）
+    if title and answer:
+        fulltext = None
+        if last_src_id:
+            async with NotebookLM(notebook_name=nb_name) as nlm:
+                fulltext = await nlm.get_source_fulltext(last_src_id)
+        meta = {'original_url': original_url} if original_url else None
+        note_path = build_note_file(nb_dir, title, target, fulltext,
+                                    answer, history, meta)
+        print(f'      合并笔记已更新：{note_path}')
+        # 归档到 RAW
+        if archive_dir:
+            archived = archive_to_raw(nb_dir, archive_dir, title, meta)
+            if archived:
+                print(f'      已归档：{archived}')
     return log_path
 
 
@@ -320,6 +347,12 @@ def main():
                         help='按本地 output/ 笔记本文件夹同步云端：列出云端有但本地没有的笔记本')
     parser.add_argument('--delete-notebooks', action='store_true',
                         help='配合 --sync-notebooks：执行删除（不带则 dry-run）')
+    parser.add_argument('--archive', nargs='?', const=DEFAULT_ARCHIVE,
+                        default=DEFAULT_ARCHIVE,
+                        help='归档合并笔记到本地目录（默认 D:\\QQ的收藏夹\\RAW；'
+                             '查重：原始链接优先，其次标题，相同则覆盖）')
+    parser.add_argument('--no-archive', action='store_true',
+                        help='跳过归档（默认每次分析后自动归档）')
     args = parser.parse_args()
 
     # 笔记本同步模式：不需要 target
@@ -357,10 +390,12 @@ def main():
         artifacts = None
     for attempt in range(2):
         try:
+            # 归档：--no-archive 跳过；否则用 --archive 指定目录（默认 RAW）
+            archive_dir = None if args.no_archive else args.archive
             path = asyncio.run(run(args.target, prompt, args.output,
                                    args.notebook, question, args.chat,
                                    artifacts, args.lang, artifact_only,
-                                   args.no_yt_match))
+                                   args.no_yt_match, archive_dir))
             print(f'\n总结已生成：{path}')
             return
         except (ValueError, FileNotFoundError) as e:

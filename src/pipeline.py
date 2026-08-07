@@ -97,6 +97,28 @@ class NotebookLM:
         """删除云端笔记本（幂等）。"""
         await self._client.notebooks.delete(notebook_id)
 
+    async def get_source_fulltext(self, source_id: str,
+                                  output_format: str = 'markdown') -> str | None:
+        """提取来源原文/转写全文（文章全文、YouTube/B站音频转写文本）。
+        返回文本内容；失败返回 None（不阻断主流程）。
+        markdown 格式需要 markdownify 包，缺失时自动回退 text。"""
+        nb_id = await self._ensure_notebook()
+        for fmt in (output_format, 'text'):
+            try:
+                ft = await self._client.sources.get_fulltext(
+                    nb_id, source_id, output_format=fmt)
+                content = getattr(ft, 'content', None)
+                if content:
+                    return content
+            except ImportError:
+                # markdown 格式缺依赖 -> 回退 text
+                if fmt == 'text':
+                    print('      (原文提取：markdown 依赖缺失，已回退纯文本)')
+            except Exception as e:
+                if fmt == 'text':
+                    print(f'      (原文提取失败：{type(e).__name__})')
+        return None
+
     async def get_conversation_id(self) -> str | None:
         """获取当前对话 ID（追问时传入保持上下文）。"""
         nb_id = await self._ensure_notebook()
