@@ -1,0 +1,29 @@
+# notebooklm-brief 配置文件
+# 复制本文件为 config.yaml 后按需修改；或运行 `python main.py --setup` 交互式生成
+#
+# 迁移到新机器：复制本项目目录 + 本文件 + 已有 output/ 即可；
+# NotebookLM 登录态在 ~/.notebooklm/（需在新机器重新 `python -m notebooklm login`）
+
+# 输出目录：分析/导图/学习指南/合并笔记存放处（每个笔记本一个子文件夹）
+output_dir: E:\AI project\06-工具项目\notebooklm-brief\output
+
+# 归档目录：每次分析后合并笔记复制到此（RAW 收藏夹）。留空 = 不归档
+archive_dir: D:\QQ的收藏夹\RAW
+
+# 访问 Google / NotebookLM 的本地代理（v2rayN 等）。留空 = 直连（可能超时）
+proxy: http://127.0.0.1:10808
+
+# 访问 YouTube 的代理（默认同 proxy；单独配置可覆盖）
+# yt_proxy: http://127.0.0.1:10808
+
+# NotebookLM 生成语言（BCP-47：zh_Hans 简体中文 / zh_Hant 繁体 / en 英语）
+language: zh_Hans
+
+# B站链接是否先自动匹配 YouTube 原片（true=先搜原片省下载音频；false=直接下载）
+yt_match: true
+
+# Google 账号邮箱（提示用，不影响功能）
+account_email: qinqiang316@gmail.com
+
+# NotebookLM 数据目录（默认 ~/.notebooklm；一般无需修改）
+# notebooklm_home:

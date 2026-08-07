@@ -34,8 +34,6 @@ def youtube_title(url: str) -> str | None:
 
 # ---------- B站 -> YouTube 原片匹配（省去下载音频） ----------
 
-YT_PROXY = 'http://127.0.0.1:10808'  # v2rayN 本地代理（访问 YouTube 必需）
-
 
 def _norm_title(s: str) -> str:
     """标题规范化：小写、去括号内容（【】[]()）、去标点、去常见搬运/字幕前后缀。"""
@@ -80,14 +78,20 @@ def bilibili_meta(url: str) -> tuple[str | None, float | None]:
 
 
 def youtube_match(query: str, duration: float | None = None,
-                  proxy: str = YT_PROXY, max_results: int = 10) -> str | None:
+                  proxy: str = None, max_results: int = 10) -> str | None:
     """在 YouTube 搜索与 B站视频相同的内容。命中返回 youtube 链接，否则 None。
 
     匹配条件（同时满足）：
       1) 标题规范化后相似（包含 / Jaccard > 0.55）
       2) 时长接近（±15% 或 ±60s）
     代理不可用/搜索失败一律返回 None（调用方回退下载音频，无副作用）。
-    """
+    proxy 默认从 config.yaml 读取（yt_proxy / proxy）。"""
+    if proxy is None:
+        try:
+            from .config import get_yt_proxy
+            proxy = get_yt_proxy()
+        except Exception:
+            proxy = 'http://127.0.0.1:10808'
     try:
         cmd = ['python', '-m', 'yt_dlp', '-J', '--flat-playlist',
                '--proxy', proxy, f'ytsearch{max_results}:{query}']

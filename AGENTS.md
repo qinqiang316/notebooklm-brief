@@ -61,6 +61,12 @@ VPY="/c/Users/lenovo/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe"
 # 笔记本同步：执行删除（本地 output/ 保留的笔记本，云端多余的删除）
 "$VPY" main.py --sync-notebooks --delete-notebooks
 
+# 首次使用引导：检查依赖、登录 NotebookLM、创建目录、生成 config.yaml
+"$VPY" main.py --setup
+
+# 环境自检：依赖/登录/目录/代理/配置
+"$VPY" main.py --doctor
+
 # 其他
 "$VPY" main.py --prompt-file prompts/analysis.md <链接>   # 自定义模板
 "$VPY" main.py --notebook 指定笔记本名 <链接>             # 手动指定笔记本
@@ -108,10 +114,17 @@ VPY="/c/Users/lenovo/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe"
 
 ## 环境与登录
 
-- 依赖：notebooklm-py[browser] + yt-dlp，装在 Hermes venv（`C:\Users\lenovo\AppData\Local\hermes\hermes-agent\venv`）
+- 依赖：notebooklm-py[browser] + yt-dlp + pyyaml + markdownify，装在 Hermes venv（`C:\Users\lenovo\AppData\Local\hermes\hermes-agent\venv`）
 - 登录态：`~/.notebooklm/profiles/default/storage_state.json`（Google 账号 qinqiang316@gmail.com）
 - **登录态失效全自动处理**：main.py 捕获 auth 错误 → 自动 `python -m notebooklm login --browser msedge` → 重试（Playwright profile 保留登录，无人值守）
 - 需代理访问 Google：v2rayN 开启（127.0.0.1:10808 系统代理），否则超时
+
+## 配置与迁移（config.yaml）
+
+- **所有机器相关配置集中在项目根 `config.yaml`**（归档目录/输出目录/代理/语言/账号邮箱/yt_match），代码不硬编码路径
+- `config.yaml` 已 gitignore（含本地路径）；迁移时复制 `config.example.yaml` 为 `config.yaml` 修改，或直接运行 `python main.py --setup`
+- 首次使用新机器：①安装依赖（setup 自动装或手动 pip install "notebooklm-py[browser]" yt-dlp pyyaml markdownify）②`python -m notebooklm login --browser msedge` 登录 ③`python main.py --setup` 交互配置 ④`python main.py --doctor` 自检
+- 归档目录未配置时跳过归档；`--archive` 可临时指定
 
 ## 关键坑
 
@@ -126,10 +139,14 @@ VPY="/c/Users/lenovo/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe"
 ## 文件结构
 
 ```
-main.py              # 入口：来源识别 → NotebookLM → 保存 + 笔记本同步
-src/pipeline.py      # NotebookLM 通道封装（笔记本/来源/提问/history/artifact/语言）
+main.py              # 入口：来源识别 → NotebookLM → 保存 + 笔记本同步 + 归档
+src/config.py        # 配置读取/保存（config.yaml，机器相关集中管理）
+src/setup.py         # 首次引导（--setup）+ 环境自检（--doctor）
+src/pipeline.py      # NotebookLM 通道封装（笔记本/来源/提问/history/artifact/语言/原文提取）
 src/source.py        # 输入类型识别 + B站音频下载 + B站->YouTube 原片匹配
-src/output.py        # 保存分析/对话记录/artifact 命名 + 导图 JSON→MD 转换
+src/output.py        # 保存分析/对话记录/合并笔记/归档 + 导图 JSON→MD 转换
 prompts/analysis.md  # 五段式分析模板
+config.example.yaml  # 配置模板（迁移时复制为 config.yaml）
+config.yaml          # 本机配置（已 gitignore）
 output/              # 生成结果（每个笔记本一个文件夹，不入库）
 ```

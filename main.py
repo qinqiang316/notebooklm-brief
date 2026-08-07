@@ -33,16 +33,14 @@ from src.source import (classify, bilibili_to_audio, bilibili_meta,
 from src.pipeline import NotebookLM
 from src.output import (save_answer, save_chat_log, slugify, notebook_dir,
                         build_note_file, archive_to_raw)
+from src import config as cfg
 
 # 默认学习产物：每次完整分析自动生成 内容大纲导图 + 学习指南
 DEFAULT_LEARN = ['mindmap', 'studyguide']
 
-# 默认归档目录（RAW 收藏夹）
-DEFAULT_ARCHIVE = r'D:\QQ的收藏夹\RAW'
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_PROMPT_FILE = os.path.join(BASE_DIR, 'prompts', 'analysis.md')
-DEFAULT_OUTPUT = os.path.join(BASE_DIR, 'output')
+DEFAULT_OUTPUT = cfg.get_output_dir()
 
 # artifact 类型 -> 下载文件扩展名
 ARTIFACT_EXT = {
@@ -347,13 +345,25 @@ def main():
                         help='按本地 output/ 笔记本文件夹同步云端：列出云端有但本地没有的笔记本')
     parser.add_argument('--delete-notebooks', action='store_true',
                         help='配合 --sync-notebooks：执行删除（不带则 dry-run）')
-    parser.add_argument('--archive', nargs='?', const=DEFAULT_ARCHIVE,
-                        default=DEFAULT_ARCHIVE,
-                        help='归档合并笔记到本地目录（默认 D:\\QQ的收藏夹\\RAW；'
+    parser.add_argument('--archive', nargs='?', const=None,
+                        default=None,
+                        help='归档合并笔记到本地目录（默认读 config.yaml 的 archive_dir；'
                              '查重：原始链接优先，其次标题，相同则覆盖）')
     parser.add_argument('--no-archive', action='store_true',
                         help='跳过归档（默认每次分析后自动归档）')
+    parser.add_argument('--setup', action='store_true',
+                        help='首次使用引导：检查依赖、登录 NotebookLM、创建目录、生成 config.yaml')
+    parser.add_argument('--doctor', action='store_true',
+                        help='环境自检：依赖/登录/目录/代理/配置')
     args = parser.parse_args()
+
+    # 首次使用引导 / 环境自检
+    if args.setup:
+        from src.setup import run_setup
+        sys.exit(run_setup())
+    if args.doctor:
+        from src.setup import run_doctor
+        sys.exit(run_doctor())
 
     # 笔记本同步模式：不需要 target
     if args.sync_notebooks:
@@ -390,12 +400,18 @@ def main():
         artifacts = None
     for attempt in range(2):
         try:
-            # 归档：--no-archive 跳过；否则用 --archive 指定目录（默认 RAW）
-            archive_dir = None if args.no_archive else args.archive
+            # 归档：--no-archive 跳过；否则 --archive 显式目录或 config.yaml 的 archive_dir
+            if args.no_archive:
+                archive_dir = None
+            elif args.archive is not None:
+                archive_dir = args.archive
+            else:
+                archive_dir = cfg.get_archive_dir() or None
+            skip_yt = args.no_yt_match or not cfg.get_yt_match()
             path = asyncio.run(run(args.target, prompt, args.output,
                                    args.notebook, question, args.chat,
                                    artifacts, args.lang, artifact_only,
-                                   args.no_yt_match, archive_dir))
+                                   skip_yt, archive_dir))
             print(f'\n总结已生成：{path}')
             return
         except (ValueError, FileNotFoundError) as e:
