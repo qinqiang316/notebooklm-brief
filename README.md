@@ -15,7 +15,7 @@
 
 ## 功能特性
 
-- **多来源自动识别**：文章 URL、YouTube、B站（自动下载音频转写）、本地文件（PDF/文本/音频/视频），无需手动指定类型
+- **多来源自动识别**：文章 URL、YouTube、B站（**先自动匹配 YouTube 原片**，命中则直接走服务端转写；未命中才下载音频）、本地文件（PDF/文本/音频/视频），无需手动指定类型
 - **固定五段式分析**：核心观点 → 论证结构 → 关键数据 → 局限与争议 → 启示与建议
 - **中文输出**：分析报告为中文 Markdown，带来源引用标注
 - **可自定义**：分析模板、目标笔记本均可替换
@@ -73,11 +73,23 @@ python main.py "https://www.youtube.com/watch?v=..." --ask "展开讲一下第�
 # 交互式对话：连续提问，输入 exit 退出
 python main.py "https://www.youtube.com/watch?v=..." --chat
 
-# 单来源学习：一次生成 导图(mindmap.json)+报告(report.md)+学习指南(studyguide.md)
+# 快速模式：只出分析+对话记录，跳过默认学习产物
+python main.py "https://www.youtube.com/watch?v=..." --no-learn
+
+# 跳过 B站->YouTube 原片匹配，直接下载音频（默认自动尝试匹配）
+python main.py "https://www.bilibili.com/video/BV..." --no-yt-match
+
+# 仅生成学习产物（不重复分析）：导图+报告+学习指南
 python main.py "https://www.youtube.com/watch?v=..." --learn
 
 # 单个生成（可选）：--artifact mindmap / report / studyguide
 python main.py "https://www.youtube.com/watch?v=..." --artifact report
+
+# 笔记本同步：列出云端有但本地没有的笔记本（dry-run）
+python main.py --sync-notebooks
+
+# 笔记本同步：执行删除（本地 output/ 保留的，云端多余的删除）
+python main.py --sync-notebooks --delete-notebooks
 
 # 自定义分析模板
 python main.py --prompt-file prompts/analysis.md <链接>
@@ -86,13 +98,15 @@ python main.py --prompt-file prompts/analysis.md <链接>
 python main.py --output ./output --notebook 链接总结 <链接>
 ```
 
-- 默认每个链接一个独立笔记本（`笔记-<标题>`），对话只在对应笔记本的上下文里进行，互不污染
-- 每次运行后自动生成 **`<标题>.对话记录.md`**：汇总 NotebookLM 里所有轮次的问题和回答（首次模板分析 + 每次 --ask/--chat），全量覆盖更新
-- `--ask` 单轮追问结果同时追加到分析文件；`--chat` 多轮内容都在对话记录里
-- `--learn` / `--artifact` 输出到 `output/artifacts/`：导图(JSON 树)、报告(简报 md)、学习指南(md)
+- 默认每个链接一个独立笔记本（`笔记-<标题>`），**每个笔记本一个独立输出文件夹**：`output/<笔记本名>/`，所有产物都归到该文件夹
+- 首次完整分析自动生成：**分析(`<标题>.md`) + 对话记录(`<标题>.对话记录.md`) + 学习指南(`<标题>-studyguide.md`) + 内容大纲导图(`<标题>-mindmap.json` 及自动转换的 `<标题>-mindmap.md`)**
+- 文件名固定不带日期前缀（跨天追问正确追加到同一文件），日期信息在文件头 metadata 里
+- `--ask` 单轮追问结果追加到分析文件；`--chat` 多轮内容都在对话记录里（追问/对话不重复生成学习产物）
+- `--learn` / `--artifact` 仅生成产物（不做分析），输出到对应笔记文件夹：导图(JSON+MD)、报告(简报 md)、学习指南(md)
+- 所有生成内容默认中文（NotebookLM 库语言代码 zh_Hans，`--lang en` 可切换）
 - 旧参数 `--follow-up` 是 `--ask` 的别名，兼容
 
-B站视频会先下载音频再转写，耗时约 1-3 分钟，属正常。
+B站视频默认先尝试匹配 YouTube 原片（标题相似+时长接近双条件，走 v2rayN 代理），命中则直接传 YouTube 链接给 NotebookLM 服务端转写；未命中才下载音频再上传，耗时约 1-3 分钟。`--no-yt-match` 可强制跳过匹配。
 
 ## 项目结构
 
@@ -104,14 +118,14 @@ notebooklm-brief/
 ├─ src/
 │  ├─ source.py         # 来源分类 + B站音频下载
 │  ├─ pipeline.py       # NotebookLM 客户端封装
-│  └─ output.py         # 保存 Markdown 报告
-├─ output/              # 生成的报告（已 gitignore）
+│  └─ output.py         # 保存报告/对话记录 + 导图 JSON→MD 转换
+├─ output/              # 生成结果（每个笔记本一个文件夹，已 gitignore）
 └─ .gitignore
 ```
 
 ## 输出示例
 
-每份报告为 `output/<日期>-<标题>.md`，头部带来源链接与生成时间，正文按模板五段展开：
+每份报告为 `output/<笔记本名>/<标题>.md`，头部带来源链接与生成时间，正文按模板五段展开：
 
 ```markdown
 # 链接总结：<标题>

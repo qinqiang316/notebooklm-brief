@@ -5,10 +5,11 @@
 
 ## 项目是什么
 
-链接/文件 → Google NotebookLM → 结构化输出的自动化工具。支持两种用法：
+链接/文件 → Google NotebookLM → 结构化输出的自动化工具。支持三种用法：
 
 1. **单来源分析 + 持续对话**：一个链接一个独立笔记本，分析后可无限轮对话，所有 Q&A 自动归档为对话记录
-2. **单来源学习产物**：生成 NotebookLM 原生内容（导图/报告/学习指南）
+2. **单来源学习产物**：默认分析自动生成 导图+学习指南（导图自动转易读 md）
+3. **笔记本同步**：按本地 output/ 文件夹管理云端笔记本（保留本地有的，清理云端多余的）
 
 ### 项目总体目标（agent 工作准则）
 
@@ -27,35 +28,73 @@
 cd "E:\AI project\06-工具项目\notebooklm-brief"
 VPY="/c/Users/lenovo/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe"
 
-# 首次完整分析（五段式，自动建独立笔记本 笔记-<标题>）
+# 首次完整分析（五段式 + 自动生成 导图+学习指南，自动建独立笔记本 笔记-<标题>）
 "$VPY" main.py "<链接或文件路径>"
 
-# 单轮对话（保持上下文，追加到分析文件）
+# 单轮对话（保持上下文，追加到分析文件，不再重复生成学习产物）
 "$VPY" main.py "<同一链接>" --ask "你的问题"
 
 # 交互式对话（连续提问，输入 exit 退出）
 "$VPY" main.py "<同一链接>" --chat
 
-# 一次生成 导图+报告+学习指南（输出到 output/artifacts/）
+# 快速模式：只出分析+对话记录，跳过默认学习产物
+"$VPY" main.py "<链接>" --no-learn
+
+# 跳过 B站->YouTube 原片匹配，直接下载音频（默认自动尝试匹配）
+"$VPY" main.py "<B站链接>" --no-yt-match
+
+# 一次生成 导图+报告+学习指南（仅产物，不做分析；输出到该笔记文件夹）
 "$VPY" main.py "<链接>" --learn
 
 # 单个生成：--artifact mindmap | report | studyguide（--lang en 切语言）
 "$VPY" main.py "<链接>" --artifact report
+
+# 语言：默认中文（zh_Hans），--lang 可切换（如 --lang en）；所有生成内容跟随语言设置
+"$VPY" main.py "<链接>" --lang en
+
+# 笔记本同步：列出云端有但本地没有的笔记本（dry-run，不删）
+"$VPY" main.py --sync-notebooks
+
+# 笔记本同步：执行删除（本地 output/ 保留的笔记本，云端多余的删除）
+"$VPY" main.py --sync-notebooks --delete-notebooks
 
 # 其他
 "$VPY" main.py --prompt-file prompts/analysis.md <链接>   # 自定义模板
 "$VPY" main.py --notebook 指定笔记本名 <链接>             # 手动指定笔记本
 ```
 
-## 输出约定
+## 输入类型（自动识别，无需指定）
+
+| 输入 | 处理 |
+|------|------|
+| 文章 URL | NotebookLM 直接抓全文 |
+| YouTube 链接 | yt-dlp 预取标题命名笔记本 → NotebookLM 服务端自动转写 |
+| B站链接（bilibili.com / b23.tv） | **先尝试匹配 YouTube 原片**（标题相似+时长接近双条件，防误配），命中则直接传 YouTube 链接给 NotebookLM 服务端转写（省下载音频）；未命中回退 yt-dlp 下载音频 → 上传转写 |
+| 本地文件（PDF/文本/音频/视频） | 直接上传 |
+
+> B站→YouTube 匹配：`src/source.py:youtube_match` 用 `yt-dlp ytsearch` 搜索标题，匹配需同时满足 ①标题规范化相似（去搬运/字幕前后缀，包含或 Jaccard>0.55）②时长接近（±15% 或 ±60s）。走 v2rayN 代理（127.0.0.1:10808），代理不通/搜索失败一律回退下载音频，无副作用。`--no-yt-match` 可强制跳过。
+
+## 输出约定（v2：按笔记分文件夹）
+
+每个笔记本一个独立文件夹，所有产物都归到该笔记文件夹下：
 
 | 文件 | 说明 |
 |---|---|
-| `output/<日期>-<标题>.md` | 分析文件（首次五段式 + --ask 追问段落追加） |
-| `output/<日期>-<标题>.对话记录.md` | 全部轮次 Q&A 归档（每次运行全量覆盖更新） |
-| `output/artifacts/<标题>-mindmap.json` | 导图（JSON 树） |
-| `output/artifacts/<标题>-report.md` | 报告（简报文档） |
-| `output/artifacts/<标题>-studyguide.md` | 学习指南 |
+| `output/<笔记本名>/<标题>.md` | 分析文件（首次五段式 + --ask 追问段落追加） |
+| `output/<笔记本名>/<标题>.对话记录.md` | 全部轮次 Q&A 归档（每次运行全量覆盖更新） |
+| `output/<笔记本名>/<标题>-studyguide.md` | 学习指南（默认分析自动生成） |
+| `output/<笔记本名>/<标题>-mindmap.json` | 内容大纲导图（JSON 树，默认分析自动生成） |
+| `output/<笔记本名>/<标题>-mindmap.md` | 导图 Markdown 版（JSON 自动转换，易读大纲） |
+| `output/<笔记本名>/<标题>-report.md` | 简报文档（仅 --learn / --artifact report 生成） |
+
+文件名固定不带日期前缀（跨天追问正确追加到同一文件）；日期信息在文件头 metadata 里。
+
+## 笔记本同步（--sync-notebooks）
+
+- **本地 output/ 下的 `笔记-*` 文件夹 = 应保留的笔记本清单**
+- 云端存在但本地没有对应文件夹的笔记本：`--sync-notebooks` 仅列出（dry-run）；加 `--delete-notebooks` 执行删除
+- 匹配规则：云端笔记本名 == 本地文件夹名（或 slug 后相等）；精确匹配防误删
+- **删除前确认**：涉及之前分析过但本地文件已消失的笔记本时，先跟用户确认再删
 
 ## 环境与登录
 
@@ -69,16 +108,18 @@ VPY="/c/Users/lenovo/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe"
 1. **必须用 venv python**：bash 的 `python`（C:\Python314）PYTHONPATH 被污染——`import types` 命中 site-packages 的 notebooklm/types.py，导致 `import playwright.sync_api` 挂掉、login 误报 "Playwright not installed"。venv python（3.11.15）无此问题
 2. **`--browser-cookies edge` 不可用**：App-Bound Encryption 解密失败；必须走 Playwright profile 登录
 3. **pip 装大包**：`pip install --proxy '' -i https://mirrors.aliyun.com/pypi/simple/`（系统代理下直连 PyPI 超时）
-4. **B站链接**：NotebookLM 不认，yt-dlp 先下载音频再上传，需 1-3 分钟
-5. **artifact 不自动回流**：云端手动改的导图/报告不会同步本地；需要时重新跑 --learn/--artifact
+4. **语言代码坑**：NotebookLM 库要求 BCP-47 标签，简体中文是 `zh_Hans` 而非 `zh`。pipeline 已自动规范化（`normalize_lang`），全局默认语言已设为 zh_Hans（`python -m notebooklm language set zh_Hans`，配置在 ~/.notebooklm/config.json）
+5. **B站链接**：NotebookLM 不认 bilibili 链接。默认先尝试匹配 YouTube 原片（标题相似+时长接近双条件防误配，走 v2rayN 代理），命中则直接传 YouTube 链接给 NotebookLM 服务端转写（省下载上传）；未命中才 yt-dlp 下载音频再上传，需 1-3 分钟。`--no-yt-match` 强制跳过匹配
+6. **artifact 不自动回流**：云端手动改的导图/报告不会同步本地；需要时重新跑 --learn/--artifact
+7. **代码被外部还原**：本项目源码曾整批被还原到 v1（output/ 数据未丢）。发现关键函数缺失（notebook_dir / youtube_match / normalize_lang / sync_notebooks）时，按本文件与 skill 核对重建
 
 ## 文件结构
 
 ```
-main.py              # 入口：来源识别 → NotebookLM → 保存
-src/pipeline.py      # NotebookLM 通道封装（笔记本/来源/提问/history/artifact）
-src/source.py        # 输入类型识别 + B站音频下载
-src/output.py        # 保存分析/对话记录/artifact 命名
+main.py              # 入口：来源识别 → NotebookLM → 保存 + 笔记本同步
+src/pipeline.py      # NotebookLM 通道封装（笔记本/来源/提问/history/artifact/语言）
+src/source.py        # 输入类型识别 + B站音频下载 + B站->YouTube 原片匹配
+src/output.py        # 保存分析/对话记录/artifact 命名 + 导图 JSON→MD 转换
 prompts/analysis.md  # 五段式分析模板
-output/              # 生成结果（不入库）
+output/              # 生成结果（每个笔记本一个文件夹，不入库）
 ```

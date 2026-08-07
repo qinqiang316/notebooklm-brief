@@ -1,7 +1,27 @@
 # -*- coding: utf-8 -*-
 """NotebookLM 通道封装：登录态、笔记本、来源、提问。"""
 import asyncio
+import re
 from notebooklm import NotebookLMClient
+
+# 语言代码规范化：用户习惯写 zh，但 NotebookLM 库要求 BCP-47 标签（zh_Hans）
+LANG_ALIASES = {
+    'zh': 'zh_Hans',
+    'zh-cn': 'zh_Hans',
+    'zh_cn': 'zh_Hans',
+    'zh-hans': 'zh_Hans',
+    'zh-hant': 'zh_Hant',
+    'zh_tw': 'zh_Hant',
+    'zh-tw': 'zh_Hant',
+}
+
+
+def normalize_lang(lang: str) -> str:
+    """zh / zh_CN 等别名 -> 库支持的 BCP-47 语言代码（默认 zh_Hans 中文）。"""
+    if not lang:
+        return 'zh_Hans'
+    key = lang.strip().lower()
+    return LANG_ALIASES.get(key, key)
 
 
 class NotebookLM:
@@ -68,6 +88,15 @@ class NotebookLM:
         sources = await self._client.sources.list(nb_id)
         return [(s.id, getattr(s, 'title', '') or '') for s in sources]
 
+    async def list_all_notebooks(self) -> list[tuple[str, str]]:
+        """列出云端所有笔记本，返回 [(id, title)]。"""
+        notebooks = await self._client.notebooks.list()
+        return [(nb.id, getattr(nb, 'title', '') or '') for nb in notebooks]
+
+    async def delete_notebook(self, notebook_id: str) -> None:
+        """删除云端笔记本（幂等）。"""
+        await self._client.notebooks.delete(notebook_id)
+
     async def get_conversation_id(self) -> str | None:
         """获取当前对话 ID（追问时传入保持上下文）。"""
         nb_id = await self._ensure_notebook()
@@ -87,10 +116,11 @@ class NotebookLM:
                                 source_ids: list[str] = None):
         """生成 NotebookLM 原生内容（报告/播客/导图等），等待完成。
         kind: report|podcast|mindmap|quiz|flashcards|studyguide|infographic|slidedeck
-        返回 (kind, artifact_id)。"""
+        返回 (kind, artifact_id)。lang 自动规范化（zh -> zh_Hans）。"""
         nb_id = await self._ensure_notebook()
         arts = self._client.artifacts
         kind = kind.lower()
+        lang = normalize_lang(lang)
         if kind == 'report':
             st = await arts.generate_report(nb_id, source_ids=source_ids, language=lang)
         elif kind == 'podcast':
@@ -147,8 +177,11 @@ class NotebookLM:
     async def ask(self, prompt: str, source_ids: list[str] = None,
                   conversation_id: str = None) -> str:
         """按 prompt 提问，返回回答文本。source_ids 指定来源（默认全部）。
-        conversation_id 传上次对话 ID 即为追问（保持上下文）。"""
+        conversation_id 传上次对话 ID 即为追问（保持上下文）。
+        非中文提问自动追加中文回答要求（NotebookLM 回答语言跟随提问）。"""
         nb_id = await self._ensure_notebook()
+        if prompt and not re.search(r'[\u4e00-\u9fff]', prompt):
+            prompt = f'{prompt}\n\n（请用简体中文回答）'
         result = await self._client.chat.ask(nb_id, prompt,
                                              source_ids=source_ids,
                                              conversation_id=conversation_id)
