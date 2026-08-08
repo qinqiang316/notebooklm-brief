@@ -101,7 +101,8 @@ VPY="/c/Users/lenovo/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe"
 
 ## 合并笔记与归档
 
-- **合并笔记**（`<标题>.笔记.md`）：把 ①原文（NotebookLM get_fulltext 提取文章全文/视频转写，markdown 格式需 markdownify 包，缺失自动回退 text）②五段式分析 ③内容大纲导图(md) ④学习指南 ⑤对话记录 合并为一个文件；每次运行（分析/追问/chat）全量重建，实时更新
+- **合并笔记**（`<标题>.笔记.md`）：把 ①原文 ②五段式分析 ③内容大纲导图(md) ④学习指南 ⑤对话记录 合并为一个文件；每次运行（分析/追问/chat）全量重建，实时更新
+- **原文提取双路线**：文章 URL 优先用 **Obsidian Clipper 同款**（`clipper/extract.js`，Mozilla Readability 正文提取 + Turndown 转 Markdown，Playwright msedge 抓全页）——内容更完整、结构更易读（NotebookLM get_fulltext 对部分站点只返回标题无正文）；失败自动回退 NotebookLM get_fulltext。需 Node.js + `clipper/node_modules`（`--setup` 自动装；`config.yaml` 的 `fulltext_clipper: false` 可关闭）。视频/文件来源仍走 NotebookLM 转写文本
 - **归档**：默认每次分析后自动归档合并笔记到 `D:\QQ的收藏夹\RAW`（Obsidian 库目录），套用 `D:\QQ的收藏夹\moban\模版1.md` 的 frontmatter 模板（`--archive` 指定目录，`--no-archive` 跳过；config.yaml 的 `archive_template` 可换模板，留空=直接复制合并笔记）
 - **模板属性填充**：title=笔记标题、source=原始链接、created=当天；author/published/description/tags 优先从来源链接收集（B站 API：owner/pubdate/desc/标签；YouTube oEmbed：频道名/标题），NotebookLM/链接拿不到的字段留空不编造；tags 列表渲染为 YAML 行内 `[a, b]`
 - **查重规则**：优先原始链接（笔记头 `原始链接：` metadata / 归档 frontmatter `source:`，B站链接保留原始 bilibili 地址），其次标题；相同则用最新覆盖，不同则新增
@@ -136,6 +137,7 @@ VPY="/c/Users/lenovo/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe"
 5. **B站链接**：NotebookLM 不认 bilibili 链接。默认先尝试匹配 YouTube 原片（标题相似+时长接近双条件防误配，走 v2rayN 代理），命中则直接传 YouTube 链接给 NotebookLM 服务端转写（省下载上传）；未命中才 yt-dlp 下载音频再上传，需 1-3 分钟。`--no-yt-match` 强制跳过匹配
 6. **artifact 不自动回流**：云端手动改的导图/报告不会同步本地；需要时重新跑 --learn/--artifact
 7. **代码被外部还原**：本项目源码曾整批被还原到 v1（output/ 数据未丢）。发现关键函数缺失（notebook_dir / youtube_match / normalize_lang / sync_notebooks）时，按本文件与 skill 核对重建
+8. **Clipper 原文提取依赖 Node**：`clipper/node_modules` 缺失时 `--doctor` 会提示、原文自动回退 NotebookLM（不报错）；新机器迁移后跑 `--setup` 或 `cd clipper && npm install` 恢复
 
 ## 文件结构
 
@@ -146,6 +148,8 @@ src/setup.py         # 首次引导（--setup）+ 环境自检（--doctor）
 src/pipeline.py      # NotebookLM 通道封装（笔记本/来源/提问/history/artifact/语言/原文提取）
 src/source.py        # 输入类型识别 + B站音频下载 + B站->YouTube 原片匹配
 src/output.py        # 保存分析/对话记录/合并笔记/归档 + 导图 JSON→MD 转换
+src/fetch_fulltext.py # 网页原文提取（Obsidian Clipper 同款：Playwright 抓页 + Readability/Turndown）
+clipper/extract.js   # Clipper 提取核心（Mozilla Readability + Turndown，npm 依赖 @mozilla/readability turndown jsdom）
 prompts/analysis.md  # 五段式分析模板
 config.example.yaml  # 配置模板（迁移时复制为 config.yaml）
 config.yaml          # 本机配置（已 gitignore）

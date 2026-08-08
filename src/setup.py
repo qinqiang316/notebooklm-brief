@@ -81,6 +81,18 @@ def _check_proxy() -> tuple[bool, str]:
         return False, f'代理 {proxy} 不可达（{type(e).__name__}）'
 
 
+def _check_clipper() -> tuple[bool, str]:
+    """检查 Obsidian Clipper 路线（网页全文提取）是否可用。"""
+    node = shutil.which('node')
+    if not node:
+        return False, '未安装 Node.js（网页原文提取将回退 NotebookLM）'
+    nm = os.path.join(cfg.BASE_DIR, 'clipper', 'node_modules')
+    js = os.path.join(cfg.BASE_DIR, 'clipper', 'extract.js')
+    if not os.path.isdir(nm) or not os.path.isfile(js):
+        return False, 'clipper 依赖缺失（cd clipper && npm install）'
+    return True, '可用（Readability+Turndown 网页原文提取）'
+
+
 def _print_table(items: list[tuple[str, str, bool]]):
     """打印检查结果表：[(项, 说明, 是否OK)]。"""
     for name, detail, ok in items:
@@ -137,9 +149,15 @@ def run_doctor() -> int:
     ok_proxy, proxy_detail = _check_proxy()
     print(f'  {"✓" if ok_proxy else "✗"} {proxy_detail}')
 
+    # 6. Clipper 路线（网页原文提取）
+    print('\n[6] Obsidian Clipper 网页原文提取')
+    ok_clipper, clipper_detail = _check_clipper()
+    print(f'  {"✓" if ok_clipper else "✗"} {clipper_detail}')
+
     # 汇总
     failed = (not os.path.isfile(cfg.CONFIG_PATH)) or bool(missing) \
-        or not ok_login or any(not v for v in dirs.values()) or not ok_proxy
+        or not ok_login or any(not v for v in dirs.values()) or not ok_proxy \
+        or not ok_clipper
     print('\n' + '=' * 50)
     if failed:
         print('自检发现待处理项（见上方 ✗），可运行 `python main.py --setup` 引导修复')
@@ -192,6 +210,23 @@ def run_setup() -> int:
         print('  安装完成 ✓')
     else:
         print('  依赖齐全 ✓')
+
+    # Clipper 路线（网页全文提取，可选增强）
+    ok_clipper, clipper_detail = _check_clipper()
+    if not ok_clipper:
+        print(f'  · Obsidian Clipper 网页原文提取：{clipper_detail}')
+        if shutil.which('node'):
+            print('  正在安装 clipper 依赖（npm install）...')
+            r = subprocess.run(
+                ['npm', 'install'], cwd=os.path.join(cfg.BASE_DIR, 'clipper'),
+                capture_output=True, text=True, timeout=300)
+            if r.returncode == 0:
+                print('  clipper 依赖安装完成 ✓')
+            else:
+                print(f'  安装失败：{r.stderr[-300:]}')
+                print('  可手动执行：cd clipper && npm install')
+        else:
+            print('  需安装 Node.js（https://nodejs.org），否则网页原文提取回退 NotebookLM')
 
     # 2. 登录
     print('\n[2/4] NotebookLM 登录')

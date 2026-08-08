@@ -214,9 +214,17 @@ async def run(target: str, prompt: str, output_dir: str, notebook: str,
     # 合并笔记：原文 + 分析 + 导图 + 学习指南 + 对话记录（每次运行全量重建，实时更新）
     if title and answer:
         fulltext = None
-        if last_src_id:
+        if kind == 'url':
+            # 网页原文优先用 Clipper 路线（Readability+Turndown，内容更完整结构更易读）
+            from src.fetch_fulltext import fetch_clipper_fulltext
+            fulltext = await fetch_clipper_fulltext(target)
+            if fulltext:
+                print('      原文提取：Obsidian Clipper 路线（完整正文）')
+        if not fulltext and last_src_id:
             async with NotebookLM(notebook_name=nb_name) as nlm:
                 fulltext = await nlm.get_source_fulltext(last_src_id)
+                if fulltext and kind == 'url':
+                    print('      (Clipper 提取不可用，已回退 NotebookLM 原文)')
         meta = {'original_url': original_url} if original_url else None
         note_path = build_note_file(nb_dir, title, target, fulltext,
                                     answer, history, meta)

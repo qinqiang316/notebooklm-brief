@@ -26,6 +26,11 @@ language: zh_Hans
 # B站链接是否先自动匹配 YouTube 原片（true=先搜原片省下载音频；false=直接下载）
 yt_match: true
 
+# 网页原文提取路线：true=优先用 Obsidian Clipper 同款（Readability+Turndown，内容更完整结构更易读），
+# 失败自动回退 NotebookLM get_fulltext。需要 Node.js 且 clipper/node_modules 已安装（--setup 自动装）。
+# 设为 false 则始终用 NotebookLM 提取原文
+fulltext_clipper: true
+
 # Google 账号邮箱（提示用，不影响功能）
 account_email: qinqiang316@gmail.com
 
