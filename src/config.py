@@ -18,7 +18,7 @@ DEFAULTS = {
     'output_dir': os.path.join(BASE_DIR, 'output'),
     'archive_dir': '',            # 空 = 不归档，需在 --setup 或 config.yaml 配置
     'archive_template': '',       # 归档模板（Obsidian frontmatter 模板 .md），空 = 直接复制
-    'proxy': 'http://127.0.0.1:10808',   # v2rayN 本地代理
+    'proxy': '',                  # 本地 HTTP 代理；macOS Shadowrocket 隧道模式留空=直连（隧道接管）
     'language': 'zh_Hans',        # NotebookLM 生成语言
     'yt_proxy': '',               # 访问 YouTube 的代理（默认同 proxy）
     'yt_match': True,             # B站链接是否先尝试匹配 YouTube 原片

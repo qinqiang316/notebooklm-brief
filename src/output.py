@@ -1,5 +1,22 @@
 # -*- coding: utf-8 -*-
-"""结果输出：将 NotebookLM 回答格式化保存为 Markdown。"""
+"""结果输出（V3 Phase 4）：三层知识资产落盘。
+
+output/<笔记本>/
+├── metadata.json          # Source Identity（来源唯一身份）
+├── source/source.md       # Source 层：原文全文（不可变，首次写入后不覆盖）
+├── generated/             # Generated 层：NotebookLM 生成物（可重新生成）
+│   ├── analysis.md        #   五段式分析（首次 + --ask 追加）
+│   ├── conversation.md    #   对话记录（每次全量覆盖更新）
+│   ├── mindmap.json/.md   #   内容大纲导图
+│   ├── studyguide.md      #   学习指南
+│   ├── report.md          #   简报
+│   ├── quiz.md            #   测验（--test）
+│   ├── review.md          #   复习建议（--review）
+│   └── <标题>.笔记.md      #   合并笔记（综合视图，供归档）
+└── knowledge/             # Human 层：用户笔记（AI 默认不覆盖）
+    └── README.md
+"""
+import json
 import os
 import re
 from datetime import datetime
@@ -18,13 +35,101 @@ def notebook_dir(output_dir: str, nb_name: str) -> str:
     return d
 
 
+# ---------- 三层目录 ----------
+
+def source_dir(nb_dir: str) -> str:
+    """Source 层目录（原文，不可变）。"""
+    d = os.path.join(nb_dir, 'source')
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def generated_dir(nb_dir: str) -> str:
+    """Generated 层目录（NotebookLM 生成物）。"""
+    d = os.path.join(nb_dir, 'generated')
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def knowledge_dir(nb_dir: str) -> str:
+    """Human 层目录（用户笔记，AI 不覆盖）。"""
+    d = os.path.join(nb_dir, 'knowledge')
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def save_source_fulltext(nb_dir: str, fulltext: str) -> str | None:
+    """原文写入 source/source.md。Source 层不可变：已存在则不覆盖。返回路径或 None。"""
+    if not fulltext:
+        return None
+    d = source_dir(nb_dir)
+    path = os.path.join(d, 'source.md')
+    if os.path.isfile(path):
+        return path  # 不可变：保留首次提取的原文
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(fulltext)
+    return path
+
+
+def ensure_knowledge_readme(nb_dir: str, title: str = '') -> str:
+    """Human 层初始说明（knowledge/README.md）。已存在不覆盖。返回路径。"""
+    d = knowledge_dir(nb_dir)
+    path = os.path.join(d, 'README.md')
+    if os.path.isfile(path):
+        return path
+    lines = [
+        f'# 个人笔记：{title or "未命名"}',
+        '',
+        '> 本目录是 **Human 层**：属于你自己的笔记，AI 默认不会覆盖。',
+        '> 你可以在这里记录对这份材料的理解、批注、延伸思考。',
+        '',
+    ]
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines) + '\n')
+    return path
+
+
+# ---------- Generated 层 ----------
+
+def save_answer(target: str, answer: str, nb_dir: str,
+                title: str = None, append: bool = False) -> str:
+    """保存分析到 generated/analysis.md（固定名，跨天追问追加同一文件）。
+
+    append=True 时在同名文件末尾追加追问段落（不重建 header）。
+    """
+    d = generated_dir(nb_dir)
+    path = os.path.join(d, 'analysis.md')
+
+    if append and os.path.isfile(path):
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write('\n\n---\n\n')
+            f.write(f'## 追问：{datetime.now().strftime("%Y-%m-%d %H:%M")}\n\n')
+            f.write(answer)
+            f.write('\n')
+        return path
+
+    header = [
+        f'# 链接总结：{title or target}',
+        '',
+        f'- 来源：{target}',
+        f'- 生成时间：{datetime.now().strftime("%Y-%m-%d %H:%M")}',
+        f'- 通道：Google NotebookLM（Gemini Notebook）',
+        '',
+        '---',
+        '',
+    ]
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(header))
+        f.write(answer)
+        f.write('\n')
+    return path
+
+
 def save_chat_log(target: str, title: str, nb_name: str,
-                  qa_pairs: list[tuple[str, str]], output_dir: str) -> str:
-    """渲染完整对话记录（所有轮次 问题->回答）为 Markdown，返回路径。
-    文件名：<标题>.对话记录.md（固定名，每次运行全量覆盖更新）。"""
-    os.makedirs(output_dir, exist_ok=True)
-    fname = f'{slugify(title)}.对话记录.md'
-    path = os.path.join(output_dir, fname)
+                  qa_pairs: list[tuple[str, str]], nb_dir: str) -> str:
+    """渲染完整对话记录到 generated/conversation.md（每次全量覆盖更新）。"""
+    d = generated_dir(nb_dir)
+    path = os.path.join(d, 'conversation.md')
 
     lines = [
         f'# 对话记录：{title}',
@@ -57,47 +162,8 @@ def save_chat_log(target: str, title: str, nb_name: str,
     return path
 
 
-def save_answer(target: str, answer: str, output_dir: str,
-                title: str = None, append: bool = False) -> str:
-    """保存回答为 Markdown 文件，返回文件路径。
-    文件名：<标题或来源>.md（固定名，跨天追问也能正确追加到同一文件）
-    append=True 时在同名文件末尾追加追问段落（不重建 header）。"""
-    os.makedirs(output_dir, exist_ok=True)
-    if not title:
-        title = target.split('/')[-1] if '/' in target else target
-    fname = f'{slugify(title)}.md'
-    path = os.path.join(output_dir, fname)
-
-    if append and os.path.isfile(path):
-        with open(path, 'a', encoding='utf-8') as f:
-            f.write('\n\n---\n\n')
-            f.write(f'## 追问：{datetime.now().strftime("%Y-%m-%d %H:%M")}\n\n')
-            f.write(answer)
-            f.write('\n')
-        return path
-
-    header = [
-        f'# 链接总结：{title}',
-        '',
-        f'- 来源：{target}',
-        f'- 生成时间：{datetime.now().strftime("%Y-%m-%d %H:%M")}',
-        f'- 通道：Google NotebookLM（Gemini Notebook）',
-        '',
-        '---',
-        '',
-    ]
-    with open(path, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(header))
-        f.write(answer)
-        f.write('\n')
-    return path
-
-
 def mindmap_json_to_md(json_path: str, md_path: str = None) -> str:
-    """NotebookLM 导图 JSON（{name, children[]} 树）-> 易读 Markdown 大纲。
-    输出层级：根节点作标题，一级节点 H2，二级起列表缩进。返回 md 文件路径。
-    md_path 缺省时与 json 同目录同名 .md。"""
-    import json
+    """NotebookLM 导图 JSON（{name, children[]} 树）-> 易读 Markdown 大纲。"""
     with open(json_path, encoding='utf-8') as f:
         data = json.load(f)
 
@@ -125,16 +191,71 @@ def mindmap_json_to_md(json_path: str, md_path: str = None) -> str:
     return md_path
 
 
-# ---------- 合并笔记（原文 + 分析 + 导图 + 学习指南 + 对话记录） ----------
+def quiz_json_to_md(json_path: str, md_path: str = None) -> str:
+    """NotebookLM 测验 JSON -> 可读 Markdown（题目 + 选项 + 答案）。
+
+    容错解析多种结构：{"questions": [...]} / {"quiz": [...]} / 直接数组 /
+    [{"question": ...}]。md_path 缺省时与 json 同目录同名 .md。
+    """
+    with open(json_path, encoding='utf-8') as f:
+        data = json.load(f)
+
+    questions = data
+    if isinstance(data, dict):
+        questions = (data.get('questions') or data.get('quiz')
+                     or data.get('items') or data.get('questionsList') or [])
+    if not isinstance(questions, list):
+        questions = []
+
+    lines = ['# 测验（Quiz）', '']
+    if not questions:
+        lines.append('> 未解析到题目（JSON 结构未知，原始文件保留）。')
+    for i, q in enumerate(questions, 1):
+        if not isinstance(q, dict):
+            lines.append(f'## 第 {i} 题\n\n{q}\n')
+            continue
+        question = (q.get('question') or q.get('prompt')
+                    or q.get('text') or q.get('title') or '')
+        options = (q.get('options') or q.get('choices')
+                   or q.get('answers') or [])
+        correct = (q.get('correctAnswer') or q.get('answer')
+                   or q.get('correct') or q.get('answerIndex'))
+        lines.append(f'## 第 {i} 题\n')
+        lines.append(question)
+        if options:
+            lines.append('')
+            for oi, opt in enumerate(options):
+                if isinstance(opt, dict):
+                    opt = opt.get('text') or opt.get('option') or str(opt)
+                lines.append(f'- {opt}')
+        if correct is not None:
+            if isinstance(correct, int) and options:
+                try:
+                    correct = options[correct]
+                except Exception:
+                    pass
+            lines.append('')
+            lines.append(f'**答案**：{correct}')
+        lines.append('')
+        lines.append('---')
+        lines.append('')
+    if md_path is None:
+        md_path = os.path.splitext(json_path)[0] + '.md'
+    with open(md_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines) + '\n')
+    return md_path
+
+
+# ---------- 合并笔记（综合视图，供归档） ----------
 
 def build_note_file(nb_dir: str, title: str, target: str,
                     fulltext: str | None, answer: str,
                     qa_pairs: list[tuple[str, str]],
                     meta: dict | None = None) -> str:
-    """把 原文/分析/导图/学习指南/对话记录 合并为一个笔记文件（实时全量重建）。
-    返回笔记文件路径：<标题>.笔记.md。"""
+    """把 原文/分析/导图/学习指南/对话记录 合并为 generated/<标题>.笔记.md。"""
+    d = generated_dir(nb_dir)
     fname = f'{slugify(title)}.笔记.md'
-    path = os.path.join(nb_dir, fname)
+    path = os.path.join(d, fname)
 
     lines = [
         f'# 笔记：{title}',
@@ -147,28 +268,21 @@ def build_note_file(nb_dir: str, title: str, target: str,
         lines.append(f'- 原始链接：{meta["original_url"]}')
     lines += ['', '---', '']
 
-    # 第一部分：原文（文章全文 / 视频音频转写）
     if fulltext:
         lines += ['## 原文（来源全文）', '', fulltext.strip(), '', '---', '']
     else:
         lines += ['## 原文（来源全文）', '', '> 原文提取失败或来源不支持提取。', '', '---', '']
 
-    # 第二部分：五段式分析
     lines += ['## 分析', '', answer.strip(), '', '---', '']
 
-    # 第三部分：内容大纲导图（md 版，若存在）
-    mmd = os.path.join(nb_dir, f'{slugify(title)}-mindmap.md')
+    mmd = os.path.join(d, 'mindmap.md')
     if os.path.isfile(mmd):
-        mm_content = open(mmd, encoding='utf-8').read()
-        lines += ['## 内容大纲导图', '', mm_content.strip(), '', '---', '']
+        lines += ['## 内容大纲导图', '', open(mmd, encoding='utf-8').read().strip(), '', '---', '']
 
-    # 第四部分：学习指南（若存在）
-    sg = os.path.join(nb_dir, f'{slugify(title)}-studyguide.md')
+    sg = os.path.join(d, 'studyguide.md')
     if os.path.isfile(sg):
-        sg_content = open(sg, encoding='utf-8').read()
-        lines += ['## 学习指南', '', sg_content.strip(), '', '---', '']
+        lines += ['## 学习指南', '', open(sg, encoding='utf-8').read().strip(), '', '---', '']
 
-    # 第五部分：对话记录
     if qa_pairs:
         lines += ['## 对话记录', '']
         for i, (q, a) in enumerate(qa_pairs, 1):
@@ -186,12 +300,7 @@ def build_note_file(nb_dir: str, title: str, target: str,
 
 def render_archive_note(template_path: str, title: str, source: str,
                         meta: dict | None = None) -> str:
-    """用 Obsidian 模板渲染归档笔记的 frontmatter + 模板正文部分。
-    - 模板为 Markdown 文件，frontmatter（--- 之间的 YAML）中空值字段按映射填充：
-      title=笔记标题, source=原始链接或来源, author/published/description/tags=meta 提供值,
-      created=今天日期
-    - 模板中已有值的字段、非 frontmatter 部分原样保留；模板无 frontmatter 时原样返回
-    - 返回渲染后的模板文本，归档正文由调用方追加。"""
+    """用 Obsidian 模板渲染归档笔记的 frontmatter + 模板正文部分。"""
     with open(template_path, encoding='utf-8') as f:
         text = f.read()
 
@@ -216,7 +325,6 @@ def render_archive_note(template_path: str, title: str, source: str,
         if km and not line.lstrip().startswith('#'):
             indent, key, val = km.group(1), km.group(2), km.group(3)
             if not val.strip() and key in values and values[key]:
-                # tags 列表 -> YAML 行内列表；其余值剥掉换行（frontmatter 单行）
                 if key == 'tags' and isinstance(values[key], (list, tuple)):
                     rendered = ', '.join(str(t) for t in values[key])
                     lines.append(f'{indent}{key}: [{rendered}]')
@@ -233,17 +341,15 @@ def archive_to_raw(nb_dir: str, archive_dir: str,
                    title: str, meta: dict | None = None,
                    target: str = None,
                    template_path: str = None) -> str | None:
-    """归档笔记文件到 archive_dir（Obsidian 库目录）。
-    - template_path 存在时：用模板渲染 frontmatter + 合并笔记正文；否则直接复制
-    - 查重：优先原始链接（meta.original_url），其次标题（去 slug 前缀）
-    - 相同则用最新覆盖；不同则新增
+    """归档合并笔记到 archive_dir（Obsidian 库目录）。
+    - 笔记文件：generated/<标题>.笔记.md（V3 三层结构）
+    - 查重：优先原始链接（meta.original_url），其次标题；相同则用最新覆盖
     - 返回归档路径；无笔记文件返回 None。"""
-    note_file = os.path.join(nb_dir, f'{slugify(title)}.笔记.md')
+    note_file = os.path.join(nb_dir, 'generated', f'{slugify(title)}.笔记.md')
     if not os.path.isfile(note_file):
         return None
     os.makedirs(archive_dir, exist_ok=True)
 
-    # 原始链接查重：扫描已有归档的 metadata（兼容旧格式 `原始链接：` 与新格式 frontmatter `source:`）
     src_url = (meta or {}).get('original_url') or ''
     target_name = None
     if src_url:
@@ -258,7 +364,6 @@ def archive_to_raw(nb_dir: str, archive_dir: str,
             if f'原始链接：{src_url}' in head or f'source: {src_url}' in head:
                 target_name = f
                 break
-    # 标题查重（无链接命中时；兼容旧格式 `# 笔记：` 与新格式 frontmatter `title:`）
     if target_name is None:
         slug_title = slugify(title, max_len=80)
         for f in os.listdir(archive_dir):
@@ -272,17 +377,14 @@ def archive_to_raw(nb_dir: str, archive_dir: str,
             if stem == slug_title or f'# 笔记：{title}' in head or f'title: {title}' in head:
                 target_name = f
                 break
-    # 归档文件名：<标题>.笔记.md（与源文件一致）
     dest = os.path.join(archive_dir, f'{slugify(title, max_len=80)}.笔记.md')
     if target_name and os.path.basename(dest) != target_name:
-        # 同名异文件：删除旧的（内容被新的覆盖）
         try:
             os.remove(os.path.join(archive_dir, target_name))
         except OSError:
             pass
     note_content = open(note_file, encoding='utf-8').read()
     if template_path and os.path.isfile(template_path):
-        # 模板渲染：frontmatter + 模板正文（若有）+ 合并笔记正文
         rendered = render_archive_note(template_path, title, target or src_url, meta)
         with open(dest, 'w', encoding='utf-8') as f:
             f.write(rendered.rstrip('\n'))
