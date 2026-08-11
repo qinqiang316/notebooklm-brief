@@ -105,6 +105,7 @@ VPY="C:\Users\lenovo\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe"
 
 | 层 | 文件 | 说明 |
 |---|---|---|
+| **归档** | `归档笔记.md` | ★ 最终归档笔记（放顶层，与过程文件区分）：原文 + 分析 + 导图 + 学习指南 + 对话 + Human 笔记合并 |
 | **Source** | `source/source.md` | 原文全文（**不可变**，首次提取后不覆盖） |
 | **Identity** | `metadata.json` | 来源唯一身份（source_id / canonical_url / notebook_id 关联） |
 | **Generated** | `generated/analysis.md` | 五段式分析（首次 + `ask` 追问追加） |
@@ -114,10 +115,9 @@ VPY="C:\Users\lenovo\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe"
 | | `generated/report.md` | 简报（`--artifact report`） |
 | | `generated/quiz.md` | 测验（`test` / `learn` 生成） |
 | | `generated/review.md` | 复习建议（`review` 生成） |
-| | `generated/<标题>.笔记.md` | 合并笔记（综合视图，供归档） |
-| **Human** | `knowledge/README.md` | 个人笔记区（**AI 默认不覆盖**） |
+| **Human** | `knowledge/` | 个人笔记区（**AI 默认不覆盖**，归档笔记会自动并入） |
 
-Obsidian 归档：`RAW/<标题>.笔记.md`（套用 `config.yaml` 的 `archive_template` frontmatter 模板；查重：原始链接优先，其次标题）。
+Obsidian 归档：`RAW/<标题>.笔记.md`（从顶层 `归档笔记.md` 套用 `config.yaml` 的 `archive_template` frontmatter 模板；查重：原始链接优先，其次标题）。
 
 ## 学习闭环（Learn → Test → Review）
 

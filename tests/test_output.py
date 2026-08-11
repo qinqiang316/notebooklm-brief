@@ -138,9 +138,21 @@ class TestBuildNoteFile:
         nb = notebook_dir(str(tmp_path), '笔记-A')
         p = build_note_file(nb, '标题', 'https://x.com', '原文全文', '分析内容',
                             [('问', '答')], meta={'original_url': 'https://x.com'})
-        assert p == os.path.join(generated_dir(nb), '标题.笔记.md')
+        assert p == os.path.join(nb, '归档笔记.md')
         text = open(p, encoding='utf-8').read()
         assert '原文全文' in text
         assert '分析内容' in text
         assert '原始链接：https://x.com' in text
         assert '问' in text and '答' in text
+
+    def test_build_merges_knowledge_notes(self, tmp_path):
+        nb = notebook_dir(str(tmp_path), '笔记-A')
+        kdir = knowledge_dir(nb)
+        with open(os.path.join(kdir, '我的批注.md'), 'w', encoding='utf-8') as f:
+            f.write('# 我的批注\n\n个人思考内容')
+        p = build_note_file(nb, '标题', 'https://x.com', '原文全文', '分析内容',
+                            [('问', '答')])
+        text = open(p, encoding='utf-8').read()
+        assert '个人笔记（Human 层）' in text
+        assert '我的批注' in text
+        assert '个人思考内容' in text

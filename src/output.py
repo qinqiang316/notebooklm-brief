@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
 """结果输出（V3 Phase 4）：三层知识资产落盘。
 
-output/<笔记本>/
+output/<笔记本名>/
 ├── metadata.json          # Source Identity（来源唯一身份）
+├── 归档笔记.md             # ★ 最终归档笔记（放顶层，与过程文件区分）
 ├── source/source.md       # Source 层：原文全文（不可变，首次写入后不覆盖）
-├── generated/             # Generated 层：NotebookLM 生成物（可重新生成）
+├── generated/             # Generated 层：NotebookLM 生成物（过程文件，可重新生成）
 │   ├── analysis.md        #   五段式分析（首次 + --ask 追加）
 │   ├── conversation.md    #   对话记录（每次全量覆盖更新）
 │   ├── mindmap.json/.md   #   内容大纲导图
 │   ├── studyguide.md      #   学习指南
 │   ├── report.md          #   简报
 │   ├── quiz.md            #   测验（--test）
-│   ├── review.md          #   复习建议（--review）
-│   └── <标题>.笔记.md      #   合并笔记（综合视图，供归档）
+│   └── review.md          #   复习建议（--review）
 └── knowledge/             # Human 层：用户笔记（AI 默认不覆盖）
     └── README.md
 """
@@ -246,16 +246,19 @@ def quiz_json_to_md(json_path: str, md_path: str = None) -> str:
     return md_path
 
 
-# ---------- 合并笔记（综合视图，供归档） ----------
+# ---------- 归档笔记（顶层，综合视图，供归档） ----------
 
 def build_note_file(nb_dir: str, title: str, target: str,
                     fulltext: str | None, answer: str,
                     qa_pairs: list[tuple[str, str]],
                     meta: dict | None = None) -> str:
-    """把 原文/分析/导图/学习指南/对话记录 合并为 generated/<标题>.笔记.md。"""
+    """把 原文/分析/导图/学习指南/对话记录/个人笔记 合并为顶层 归档笔记.md。
+
+    - 归档笔记放笔记本根目录（与 generated/ 过程文件区分），文件名固定 归档笔记.md
+    - 每次运行全量重建
+    """
     d = generated_dir(nb_dir)
-    fname = f'{slugify(title)}.笔记.md'
-    path = os.path.join(d, fname)
+    path = os.path.join(nb_dir, '归档笔记.md')
 
     lines = [
         f'# 笔记：{title}',
@@ -290,6 +293,21 @@ def build_note_file(nb_dir: str, title: str, target: str,
                       '**回答**：', '', a, '', '---', '']
     else:
         lines += ['## 对话记录', '', '> 暂无对话记录。', '']
+
+    # Human 层个人笔记（AI 不覆盖）：knowledge/ 下除 README.md 的 .md 全部并入
+    kdir = os.path.join(nb_dir, 'knowledge')
+    if os.path.isdir(kdir):
+        notes = [f for f in sorted(os.listdir(kdir))
+                 if f.endswith('.md') and f.lower() != 'readme.md']
+        if notes:
+            lines += ['', '---', '', '## 个人笔记（Human 层）', '']
+            for f in notes:
+                try:
+                    content = open(os.path.join(kdir, f), encoding='utf-8').read().strip()
+                except Exception:
+                    continue
+                stem = os.path.splitext(f)[0]
+                lines += ['', f'### {stem}', '', content, '']
 
     with open(path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines) + '\n')
@@ -341,11 +359,11 @@ def archive_to_raw(nb_dir: str, archive_dir: str,
                    title: str, meta: dict | None = None,
                    target: str = None,
                    template_path: str = None) -> str | None:
-    """归档合并笔记到 archive_dir（Obsidian 库目录）。
-    - 笔记文件：generated/<标题>.笔记.md（V3 三层结构）
+    """归档顶层 归档笔记.md 到 archive_dir（Obsidian 库目录）。
+    - 笔记文件：<nb_dir>/归档笔记.md（V3 顶层归档笔记）
     - 查重：优先原始链接（meta.original_url），其次标题；相同则用最新覆盖
     - 返回归档路径；无笔记文件返回 None。"""
-    note_file = os.path.join(nb_dir, 'generated', f'{slugify(title)}.笔记.md')
+    note_file = os.path.join(nb_dir, '归档笔记.md')
     if not os.path.isfile(note_file):
         return None
     os.makedirs(archive_dir, exist_ok=True)

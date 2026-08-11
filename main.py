@@ -113,13 +113,18 @@ def prepare_source(target: str, output_dir: str, notebook: str,
 
 
 def resolve_notebook_name(src, explicit: str = None) -> str:
-    """笔记本名：显式指定优先；否则按来源自动生成 笔记-<标题>（每来源独立笔记本）。"""
+    """笔记本名：显式指定优先；否则按来源自动生成 笔记-<短标题>（每来源独立笔记本）。
+
+    - URL/YouTube/B站：预取标题，截短（max_len=24）
+    - 本地文件：用文件名（去扩展名），不要完整路径
+    """
     if explicit:
         return explicit
-    base = src.title or src.original
-    if src.local_path and not base:
+    if src.local_path and not src.title:
         base = os.path.splitext(os.path.basename(src.local_path))[0]
-    return f'笔记-{slugify(base, max_len=40) or "untitled"}'
+    else:
+        base = src.title or src.original
+    return f'笔记-{slugify(base, max_len=24) or "untitled"}'
 
 
 def _confirm_yt(cand, score) -> bool:
@@ -524,6 +529,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser('review', help='学习闭环第三版：按测验结果给出复习建议（generated/review.md）')
     common(p)
     p = sub.add_parser('sync', help='按本地 output/ 同步云端笔记本')
+    p.add_argument('--output', default=DEFAULT_OUTPUT, help='输出目录（默认 output/）')
     p.add_argument('--delete-notebooks', action='store_true', help='执行删除（默认 dry-run）')
     sub.add_parser('doctor', help='环境自检')
     sub.add_parser('setup', help='首次使用引导')

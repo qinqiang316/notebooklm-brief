@@ -22,6 +22,12 @@
 - 目的：① 减少实际模型（agent 主模型）的 token 消耗；② 最大化发挥 NotebookLM 自身能力——来源约束（只依据材料回答、带引用锚点）、完整对话上下文、原生 artifact（导图/报告/学习指南/测验）
 - agent 模型只做：调度（调用 main.py）、原样展示 NotebookLM 输出、本地归档（output/）；**不做资源内容的二次加工/转述**
 
+### 项目边界（与其他项目过程文件独立）
+
+- **本项目的 output/ 只存放本项目自己分析的内容**；不建立其他项目（如 be_air）的笔记本和相关过程文件
+- **be_air 项目**：可以借鉴本项目的分析流程（把分析交给 NotebookLM），但 be_air 的 NotebookLM 分析/转写过程文件统一放到 **`/Users/qqiang/AI project/06-工具项目/be_air/notebooklm-output/`**（独立目录），云端对应笔记本也不由本项目的 sync 管理
+- 半佛相关内容（`笔记-半佛-*` 4 个 + 播客转写 5 个）已全部归入 be_air/notebooklm-output/；不要在本项目 output/ 重新生成
+
 ## 快速使用（命令大全）
 
 ⚠️ **必须用 venv python**（见"关键坑"）：
@@ -98,27 +104,29 @@ VPY="/Users/qqiang/.hermes/hermes-agent/venv/bin/python"
 ```
 output/<笔记本名>/
 ├── metadata.json            # Source Identity（来源唯一身份）
+├── 归档笔记.md               # ★ 最终归档笔记（放顶层，与过程文件区分；供归档）
 ├── source/source.md         # Source 层：原文全文（不可变，首次写入后不覆盖）
-├── generated/               # Generated 层：NotebookLM 生成物（可重新生成）
+├── generated/               # Generated 层：NotebookLM 生成物（过程文件，可重新生成）
 │   ├── analysis.md          #   五段式分析（首次 + ask 追问追加）
 │   ├── conversation.md      #   全部轮次 Q&A 归档（每次全量覆盖更新）
 │   ├── mindmap.json/.md     #   内容大纲导图（JSON + 易读 Markdown）
 │   ├── studyguide.md        #   学习指南
 │   ├── report.md            #   简报（--artifact report）
 │   ├── quiz.md              #   测验（test / learn 生成）
-│   ├── review.md            #   复习建议（review 生成）
-│   └── <标题>.笔记.md        #   合并笔记（综合视图，供归档）
-└── knowledge/               # Human 层：个人笔记（AI 默认不覆盖）
+│   └── review.md            #   复习建议（review 生成）
+└── knowledge/               # Human 层：个人笔记（AI 默认不覆盖；归档笔记自动并入）
     └── README.md
 ```
 
 文件名固定不带日期前缀（跨天追问正确追加到同一文件）；日期信息在 metadata/文件头里。
 
+> **归档笔记 = 最终可归档产物**（`output/<笔记本>/归档笔记.md`）：由 build_note_file 合并 ①原文 ②五段式分析 ③内容大纲导图(md) ④学习指南 ⑤对话记录 ⑥knowledge/ 个人笔记，每次运行全量重建。`source/`、`generated/`、`knowledge/` 均为过程文件，与归档笔记区分。
+
 ## 合并笔记与归档
 
-- **合并笔记**（`generated/<标题>.笔记.md`）：把 ①原文 ②五段式分析 ③内容大纲导图(md) ④学习指南 ⑤对话记录 合并为一个文件；每次运行全量重建
+- **归档笔记**（`output/<笔记本>/归档笔记.md`）：放笔记本顶层，把 ①原文 ②五段式分析 ③内容大纲导图(md) ④学习指南 ⑤对话记录 ⑥knowledge/ 个人笔记 合并为一个文件；每次运行全量重建
 - **原文提取双路线**：文章 URL 优先用 **Obsidian Clipper 同款**（`clipper/extract.js`，Mozilla Readability 正文提取 + Turndown 转 Markdown，Playwright msedge 抓全页）——内容更完整、结构更易读（NotebookLM get_fulltext 对部分站点只返回标题无正文，微信文章会被反爬拦截）；失败自动回退 NotebookLM get_fulltext。需 Node.js + `clipper/node_modules`（`setup` 自动装；`config.yaml` 的 `fulltext_clipper: false` 可关闭）。视频/文件来源仍走 NotebookLM 转写文本
-- **归档**：默认每次分析后自动归档合并笔记到 `D:\QQ的收藏夹\RAW`（Obsidian 库目录），套用 `D:\QQ的收藏夹\moban\模版1.md` 的 frontmatter 模板（`--archive` 指定目录，`--no-archive` 跳过；config.yaml 的 `archive_template` 可换模板，留空=直接复制合并笔记）
+- **归档**：默认每次分析后自动归档顶层 归档笔记.md 到 `/Users/qqiang/Library/CloudStorage/坚果云-981921361@qq.com/QQ的收藏夹/RAW`（Obsidian 库目录），套用 `/Users/qqiang/Library/CloudStorage/坚果云-981921361@qq.com/QQ的收藏夹/moban/模版1.md` 的 frontmatter 模板（`--archive` 指定目录，`--no-archive` 跳过；config.yaml 的 `archive_template` 可换模板，留空=直接复制归档笔记）
 - **模板属性填充**：title=笔记标题、source=原始链接、created=当天；author/published/description/tags 优先从来源链接收集（B站 API：owner/pubdate/desc/标签；YouTube oEmbed：频道名/标题），拿不到的字段留空不编造；tags 列表渲染为 YAML 行内 `[a, b]`
 - **查重规则**：优先原始链接（笔记头 `原始链接：` metadata / 归档 frontmatter `source:`，B站链接保留原始 bilibili 地址），其次标题；相同则用最新覆盖，不同则新增
 
@@ -174,7 +182,7 @@ src/provider.py      # V3 NotebookLM Provider 抽象：RealNotebookLMProvider / 
 src/config.py        # 配置读取/保存（config.yaml，机器相关集中管理）
 src/setup.py         # 首次引导（setup）+ 环境自检（doctor）
 src/pipeline.py      # NotebookLM 门面：组合四个 Manager（保留旧接口转发）
-src/output.py        # 三层资产落盘：source/generated/knowledge + 合并笔记/归档 + 导图/测验转换
+src/output.py        # 三层资产落盘：source/generated/knowledge + 顶层归档笔记/归档 + 导图/测验转换
 src/fetch_fulltext.py # 网页原文提取（Obsidian Clipper 同款：Playwright 抓页 + Readability/Turndown）
 clipper/extract.js   # Clipper 提取核心（Mozilla Readability + Turndown，npm 依赖 @mozilla/readability turndown jsdom）
 prompts/analysis.md  # 五段式分析模板

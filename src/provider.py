@@ -20,15 +20,24 @@ class NotebookLMProvider:
 
 
 class RealNotebookLMProvider(NotebookLMProvider):
-    """真实 NotebookLM（notebooklm-py 客户端，登录态 from_storage）。"""
+    """真实 NotebookLM（notebooklm-py 客户端，登录态 from_storage）。
 
-    def __init__(self, client_factory=None):
+    upload_timeout：覆盖库默认的上传超时（httpx.Timeout）。大文件
+    （>100MB 音频）默认 read=300s 不够，会抛 httpx.WriteTimeout。
+    """
+
+    def __init__(self, client_factory=None, upload_timeout=None):
         self._client_factory = client_factory
+        self._upload_timeout = upload_timeout
 
     async def __aenter__(self):
         from notebooklm import NotebookLMClient
+        import httpx
         factory = self._client_factory or NotebookLMClient.from_storage
-        self._cm = factory()
+        kwargs = {}
+        if self._upload_timeout is not None:
+            kwargs['upload_timeout'] = self._upload_timeout
+        self._cm = factory(**kwargs)
         self.client = await self._cm.__aenter__()
         return self.client
 

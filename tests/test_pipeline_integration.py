@@ -58,7 +58,7 @@ class TestRunSourceIdentity:
         assert os.path.isfile(os.path.join(nb, 'source', 'source.md'))
         assert os.path.isfile(os.path.join(nb, 'generated', 'analysis.md'))
         assert os.path.isfile(os.path.join(nb, 'generated', 'conversation.md'))
-        assert os.path.isfile(os.path.join(nb, 'generated', '报告.pdf.笔记.md'))
+        assert os.path.isfile(os.path.join(nb, '归档笔记.md'))
         assert os.path.isfile(os.path.join(nb, 'knowledge', 'README.md'))
 
     def test_same_source_reuses_notebook(self, tmp_path):

@@ -1,7 +1,19 @@
+# Python
 __pycache__/
 *.pyc
-output/
-.DS_Store
+.pytest_cache/
+
+# 本机配置（含本地路径，不入库）
 config.yaml
-clipper/node_modules/
+
+# 生成结果（每个笔记本一个文件夹，不入库）
+output/
+
+# 本地 worktree 备份（V3 快照，不入库）
 .worktrees/
+
+# Clipper 依赖（npm install 生成）
+clipper/node_modules/
+
+# macOS
+.DS_Store

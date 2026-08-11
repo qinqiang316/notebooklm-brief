@@ -21,10 +21,14 @@ class NotebookLM:
 
     def __init__(self, notebook_name: str = "链接总结", notebook_id: str = None,
                  provider=None):
+        import httpx
         self.notebook_name = notebook_name
         self.notebook_id = notebook_id
         self._client = None
-        self._provider = provider or RealNotebookLMProvider()
+        if provider is None:
+            provider = RealNotebookLMProvider(
+                upload_timeout=httpx.Timeout(60.0, read=1800.0, write=1800.0))
+        self._provider = provider
         self.notebooks = NotebookManager(self)
         self.sources = SourceManager(self)
         self.conversation = ConversationManager(self)
