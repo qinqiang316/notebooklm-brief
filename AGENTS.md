@@ -63,6 +63,11 @@ VPY="/Users/qqiang/.hermes/hermes-agent/venv/bin/python"
 # 笔记本同步：执行删除（本地 output/ 保留的笔记本，云端多余的删除）
 "$VPY" main.py sync --delete-notebooks
 
+# 删除单个笔记本（云端 NotebookLM + 本地文件，交互选择保留范围）
+"$VPY" main.py delete "<链接或文件路径>"
+#   交互选项：[1] 全部删除（云端+本地+坚果云归档）[2] 仅删云端 [3] 仅删本地 [4] 取消
+#   非交互参数：--yes 全删 / --cloud-only 仅删云端 / --local-only 仅删本地
+
 # 首次使用引导 / 环境自检
 "$VPY" main.py setup
 "$VPY" main.py doctor
@@ -136,12 +141,13 @@ output/<笔记本名>/
 2. **Test**：`test` —— NotebookLM 根据来源内容出题测验（含答案），保存 `generated/quiz.md`
 3. **Review**：`review` —— 逐题作答后，NotebookLM 分析薄弱点并给出复习建议，保存 `generated/review.md`
 
-## 笔记本同步（sync）
+## 笔记本同步（sync）与删除（delete）
 
 - **本地 output/ 下的 `笔记-*` 文件夹 = 应保留的笔记本清单**
 - 云端存在但本地没有对应文件夹的笔记本：`sync` 仅列出（dry-run）；加 `--delete-notebooks` 执行删除
 - 匹配规则：云端笔记本名 == 本地文件夹名（或 slug 后相等）；精确匹配防误删
 - **删除前确认**：涉及之前分析过但本地文件已消失的笔记本时，先跟用户确认再删
+- **delete 单笔记本删除**：`main.py delete "<链接或文件路径>"` 交互选择删除范围（[1] 全部=云端+本地+坚果云归档 / [2] 仅云端 / [3] 仅本地 / [4] 取消）；非交互参数 `--yes`（全删）/ `--cloud-only` / `--local-only`。删除场景只规范化+hash 定位 source_id，不触发下载/网络；本地文件来源的笔记用原始链接删时需文件仍在，否则提示改用文件路径
 
 ## 环境与登录
 
@@ -171,7 +177,7 @@ output/<笔记本名>/
 ## 文件结构
 
 ```
-main.py              # 入口：CLI 子命令（analyze/ask/chat/learn/test/review/sync/doctor/setup）+ 学习闭环
+main.py              # 入口：CLI 子命令（analyze/ask/chat/learn/test/review/sync/delete/doctor/setup）+ 学习闭环
 src/models.py        # V3 Source Identity：SourceRecord / canonical_url / source_id / metadata.json
 src/routing.py       # V3 资源路由：SourceInput + Router（统一输入决策，main 不承担类型判断/下载）
 src/source.py        # 输入识别 + SourceManager（来源添加/列表/全文）+ B站匹配评分/置信度

@@ -20,6 +20,7 @@
 import argparse
 import asyncio
 import os
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -56,7 +57,7 @@ ARTIFACT_EXT = {
 }
 
 COMMANDS = ('analyze', 'ask', 'chat', 'learn', 'test', 'review',
-            'sync', 'doctor', 'setup')
+            'sync', 'delete', 'doctor', 'setup')
 
 
 # ---------- 输入准备（Router + 笔记本定位 + 三层目录） ----------
@@ -421,6 +422,126 @@ async def sync_notebooks(output_dir: str, delete: bool = False) -> list[tuple[st
         return await nlm.notebooks.sync(output_dir, delete=delete)
 
 
+# ---------- 删除笔记本 ----------
+
+def _source_id_for_delete(target: str) -> str:
+    """删除场景的 source_id：仅规范化 + hash，不触发任何下载/网络请求。
+
+    B站/YouTube 不预取标题、不下载音频；本地文件不存在时给出可读报错。
+    """
+    from src.models import (canonicalize_url, source_id_for_file,
+                            source_id_for_text, source_id_for_url)
+    from src.routing import classify
+    kind = classify(target)
+    if kind in ('url', 'youtube', 'bilibili'):
+        canonical = canonicalize_url(target)
+        return source_id_for_url(canonical or target)
+    if kind == 'file':
+        if not os.path.isfile(target):
+            raise ValueError(f'本地文件不存在：{target}\n'
+                             f'        （删除本地文件来源的笔记本请改用原始链接）')
+        return source_id_for_file(target)
+    return source_id_for_text(target)
+
+
+def _prompt_choice(prompt: str, valid: tuple, default: str) -> str:
+    """交互选择；回车返回 default，非交互（EOF）也返回 default。"""
+    try:
+        ans = input(f'{prompt} [{" / ".join(valid)}]（默认 {default}）> ').strip().lower()
+    except EOFError:
+        ans = ''
+    return ans if ans in valid else default
+
+
+async def run_delete(target: str, output_dir: str,
+                     mode: str = 'interactive') -> str | None:
+    """删除一个笔记本：云端 NotebookLM + 本地 output 目录（+ 坚果云归档）。
+
+    mode:
+      interactive - 交互选择删除范围（全部 / 仅云端 / 仅本地 / 取消）
+      cloud       - 仅删除云端 NotebookLM 笔记本（保留本地分析文件）
+      local       - 仅删除本地分析文件（保留云端笔记本）
+      all         - 全部删除（云端 + 本地 + 坚果云归档）
+    返回被删笔记本目录；取消/未找到返回 None。
+    """
+    src_id = _source_id_for_delete(target)
+    hit = find_notebook_by_source_id(output_dir, src_id)
+    if not hit:
+        print(f'[delete] 未找到对应笔记本（source_id={src_id}）')
+        print(f'         输出目录：{output_dir}')
+        print('         提示：用 analyze 时的原始链接删除最可靠。')
+        return None
+    nb_dir, rec = hit
+    nb_name = rec.notebook_title or os.path.basename(nb_dir)
+    nb_id = rec.notebook_id
+    print(f'[delete] 目标笔记本：{nb_name}')
+    print(f'         来源：{rec.original_url or rec.local_path or target}')
+    print(f'         本地目录：{nb_dir}')
+    print(f'         云端 notebook_id：{nb_id or "（无）"}')
+
+    if mode == 'interactive':
+        print()
+        print('  请选择删除范围：')
+        print('    [1] 全部删除（云端 NotebookLM + 本地分析文件 + 坚果云归档）')
+        print('    [2] 仅删除云端 NotebookLM 笔记本（保留本地分析文件）')
+        print('    [3] 仅删除本地分析文件（保留云端笔记本）')
+        print('    [4] 取消（什么都不删）')
+        choice = _prompt_choice('选择', ('1', '2', '3', '4'), '4')
+        if choice == '1':
+            del_cloud = del_local = True
+        elif choice == '2':
+            del_cloud, del_local = True, False
+        elif choice == '3':
+            del_cloud, del_local = False, True
+        else:
+            print('[delete] 已取消，未删除任何内容。')
+            return None
+    elif mode == 'cloud':
+        del_cloud, del_local = True, False
+    elif mode == 'local':
+        del_cloud, del_local = False, True
+    else:  # all
+        del_cloud = del_local = True
+
+    if del_cloud:
+        if nb_id:
+            async with NotebookLM(notebook_name=nb_name,
+                                  notebook_id=nb_id) as nlm:
+                await nlm.delete_notebook(nb_id)
+            print(f'[delete] 已删除云端笔记本：{nb_name}（{nb_id}）')
+        else:
+            print('[delete] 无 notebook_id，跳过云端删除')
+
+    if del_local:
+        # 坚果云归档文件（按 metadata 原始链接匹配）
+        archived = None
+        archive_dir = cfg.get_archive_dir()
+        if archive_dir and os.path.isdir(archive_dir) and rec.original_url:
+            for f in os.listdir(archive_dir):
+                if not f.endswith('.md'):
+                    continue
+                p = os.path.join(archive_dir, f)
+                try:
+                    head = open(p, encoding='utf-8').read(2000)
+                except Exception:
+                    continue
+                if (f'原始链接：{rec.original_url}' in head
+                        or f'source: {rec.original_url}' in head):
+                    archived = p
+                    break
+        if os.path.isdir(nb_dir):
+            shutil.rmtree(nb_dir)
+            print(f'[delete] 已删除本地目录：{nb_dir}')
+        else:
+            print(f'[delete] 本地目录不存在，跳过：{nb_dir}')
+        if archived:
+            os.remove(archived)
+            print(f'[delete] 已删除坚果云归档：{archived}')
+        elif archive_dir:
+            print('[delete] 未找到对应坚果云归档文件（已手动删除则忽略）')
+    return nb_dir
+
+
 def _relogin() -> bool:
     """登录态失效时自动重登录（Playwright profile 已保留 Google 登录，全程自动）。"""
     print('[!] 登录态失效，自动重新登录...')
@@ -531,6 +652,15 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser('sync', help='按本地 output/ 同步云端笔记本')
     p.add_argument('--output', default=DEFAULT_OUTPUT, help='输出目录（默认 output/）')
     p.add_argument('--delete-notebooks', action='store_true', help='执行删除（默认 dry-run）')
+    p = sub.add_parser('delete', help='删除笔记本（云端 NotebookLM + 本地文件，交互选择保留范围）')
+    p.add_argument('target', help='链接（文章/YouTube/B站）或本地文件路径（与 analyze 相同）')
+    p.add_argument('--output', default=DEFAULT_OUTPUT, help='输出目录（默认 output/）')
+    p.add_argument('--cloud-only', action='store_true',
+                   help='仅删除云端 NotebookLM 笔记本（保留本地分析文件）')
+    p.add_argument('--local-only', action='store_true',
+                   help='仅删除本地分析文件（保留云端笔记本）')
+    p.add_argument('--yes', action='store_true',
+                   help='跳过交互确认，全部删除（云端 + 本地 + 坚果云归档）')
     sub.add_parser('doctor', help='环境自检')
     sub.add_parser('setup', help='首次使用引导')
     return parser
@@ -557,6 +687,21 @@ def main():
             if 'Authentication' in msg or 'Storage' in msg:
                 if _relogin():
                     asyncio.run(sync_notebooks(args.output, delete=args.delete_notebooks))
+                    return
+            raise
+
+    if args.command == 'delete':
+        mode = 'all' if args.yes else ('cloud' if args.cloud_only
+                                       else ('local' if args.local_only
+                                             else 'interactive'))
+        try:
+            asyncio.run(run_delete(args.target, args.output, mode))
+            return
+        except Exception as e:
+            msg = str(e)
+            if 'Authentication' in msg or 'Storage' in msg:
+                if _relogin():
+                    asyncio.run(run_delete(args.target, args.output, mode))
                     return
             raise
 
