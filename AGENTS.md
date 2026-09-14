@@ -25,7 +25,7 @@
 ### 项目边界（与其他项目过程文件独立）
 
 - **本项目的 output/ 只存放本项目自己分析的内容**；不建立其他项目（如 be_air）的笔记本和相关过程文件
-- **be_air 项目**：可以借鉴本项目的分析流程（把分析交给 NotebookLM），但 be_air 的 NotebookLM 分析/转写过程文件统一放到 **`/Users/qqiang/AI project/06-工具项目/be_air/notebooklm-output/`**（独立目录），云端对应笔记本也不由本项目的 sync 管理
+- **be_air 项目**：可以借鉴本项目的分析流程（把分析交给 NotebookLM），但 be_air 的 NotebookLM 分析/转写过程文件统一放到 **`/Users/qqiang/AI project/06-开发项目/be_air/notebooklm-output/`**（独立目录），云端对应笔记本也不由本项目的 sync 管理
 - 半佛相关内容（`笔记-半佛-*` 4 个 + 播客转写 5 个）已全部归入 be_air/notebooklm-output/；不要在本项目 output/ 重新生成
 
 ## 快速使用（命令大全）
@@ -33,7 +33,7 @@
 ⚠️ **必须用 venv python**（见"关键坑"）：
 
 ```bash
-cd "/Users/qqiang/AI project/06-工具项目/notebooklm-brief"
+cd "/Users/qqiang/AI project/06-开发项目/notebooklm-brief"
 VPY="/Users/qqiang/.hermes/hermes-agent/venv/bin/python"
 
 # 首次完整分析（五段式 + 自动生成 导图+学习指南）

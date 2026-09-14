@@ -5,7 +5,7 @@
 # NotebookLM 登录态在 ~/.notebooklm/（需在新机器重新 `python -m notebooklm login`）
 
 # 输出目录：分析/导图/学习指南/合并笔记存放处（每个笔记本一个子文件夹）
-output_dir: E:\AI project\06-工具项目\notebooklm-brief\output
+output_dir: E:\AI project\开发项目\notebooklm-brief\output
 
 # 归档目录：每次分析后合并笔记归档到此（本地 Obsidian 库目录，如 D:\QQ的收藏夹\RAW）。留空 = 不归档
 archive_dir: D:\QQ的收藏夹\RAW
