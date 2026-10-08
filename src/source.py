@@ -286,7 +286,7 @@ class SourceManager:
 
         # 等待来源处理完成（NotebookLM 抓取/转写）
         try:
-            await self._nlm.notebooks.client.sources.wait_until_ready(nb_id, src.id, timeout=180)
+            await self._nlm.notebooks.client.sources.wait_until_ready(nb_id, src.id, timeout=900)
         except Exception as e:
             print(f'      (来源处理等待：{type(e).__name__})')
 
